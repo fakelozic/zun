@@ -62,6 +62,8 @@ commit for every parity check and re-baseline from time to time.
 
 ## 3. Platforms
 
+**Decision (2026-11-26):** zun is Linux only until Linux parity is reached. macOS, Windows and FreeBSD are restored later (Roadmap Phase 7).
+
 | Platform | zun | Bun canary |
 |----------|-----|------------|
 | Linux x64 / arm64 (glibc + musl) | ✅ x64 tested | ✅ |
@@ -112,6 +114,7 @@ Every 🔧 module also needs the 0.15 and 0.16 migrations, because upstream 1.3.
 ## How to implement each kind of gap
 
 ### 🔧 Restore from 1.3.14 Zig (the default path for Phases 3–4)
+0. **Linux only:** skip macOS/Windows/FreeBSD branches (`Environment.isMac`/`isWindows`, `*_darwin`, `*_windows` files). Keep them compile-time-disabled or stubbed, and record what was skipped in the module's status doc for Phase 7.
 1. Copy `bun-v1.3.14/src/<module>` into zun. Diff it against cruller's neighbouring modules to see how cruller ported similar code to 0.16 (cruller's `scripts/fix_zig016_*.py` automate part of this).
 2. Apply the 0.15 → 0.16 → 0.17 migrations (`docs/zig/migration-to-0.17.md`). Fix **leaves first**, using `zig build check`-style semantic checks.
 3. Wire it into the build (`build.zig`, codegen in `scripts/build/`) and into the CLI dispatch.
@@ -147,5 +150,5 @@ Order of execution: **T1 → T2 → T3 → (T4 subtasks)**. T5–T9 are research
 | **T7** | AoT deep-dive: how canary's `src/aot` works end to end, and a Zig plan | research | none | `docs/plan/aot.md` |
 | **T8** | Tooling plan: `check` (typescript-go in Go?), `lint`, `format`, React Compiler | research | none | `docs/plan/tooling.md` |
 | **T9** | Native deps: Zig std coverage vs canary's Rust rewrites, per library | research | none | `docs/plan/native-deps.md` |
-| T10 | Platforms: restore macOS, then Windows | implementation | T4 | later |
+| T10 | Platforms: restore macOS, then Windows (Roadmap Phase 7, **after Linux parity**) | implementation | Linux parity | later |
 | T11 | Phase 5/6 implementation from the T6–T9 plans | implementation | T4, plans | later |

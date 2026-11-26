@@ -1,7 +1,11 @@
 # Zun roadmap
 
-**End goal:** a `zun` binary that matches current Bun 1:1 (Bun 1.4.x, which is written
-in Rust), implemented in **Zig, Go and TypeScript**.
+**End goal:** a `zun` binary that behaves like Bun, implemented in **Zig, Go and TypeScript**.
+
+**How we measure it:** the percentage of **Bun's own test suite** that passes on `zun`, against a
+**locked stable Bun release**: first 1.3.14, then 1.4.5, then each later stable release in turn.
+Canary moves too fast to chase (about 600k lines of Rust added since 1.4.5). We read it for reference but never target it.
+Current numbers go in `docs/status/parity.md`.
 
 **Starting point:** cruller (Bun 1.3.14 on Zig 0.16, stripped down to a Linux server runtime).
 
@@ -18,6 +22,11 @@ Full gap list against Bun canary, plus the task breakdown: `docs/GAP.md`.
 - Zig **0.17** (0.17.1 is the current stable).
 - Binary `zun`, fully separate from the user's installed `bun` (no `bun` alias).
 - Existing C, C++ and Rust (JSC, BoringSSL, lolhtml, …) stays for now. Replacing it is far-future (Phase 6).
+- **Linux only** (x86_64 first, then arm64) until Linux parity is done. macOS and Windows come later, as their own phase (Phase 7).
+- Parity is measured by Bun's test suite against locked stable releases, not by matching canary.
+- Reuse first, cheapest first: TypeScript (`src/js`, codegen `.classes.ts`) copied from newer Bun → Zig restored from 1.3.14 → Go (typescript-go) where it fits → port from Rust only for behaviour that failing tests show has changed.
+- Zig migrations are **scripts** (`scripts/fix_zig017*`, alongside cruller's `fix_zig016_*.py`), so restored code and future Zig upgrades go through the same automation.
+- One integration owner merges agent branches. Shared files (`build.zig`, codegen, CLI dispatch) change only through small, green merges.
 
 ## Phase 0: Study ✅ (Milestone 1)
 
@@ -39,6 +48,7 @@ Full gap list against Bun canary, plus the task breakdown: `docs/GAP.md`.
 Follow `docs/zig/migration-to-0.17.md`: build files first, then compile errors from the
 leaves upward, then deprecations, then a hand audit of `@bitCast` / `@hasDecl`.
 Each step is accepted only when the Phase 1 smoke tests pass again.
+**Deliverable besides the green build:** a reusable `scripts/fix_zig017` codemod, so code restored from 1.3.14 can be run through `fix_zig016` + `fix_zig017`.
 - **Checkpoint:** a green baseline on 0.17. Fold everything we learned into `docs/zig/`.
 
 ## Phase 3: Become zun
@@ -50,7 +60,8 @@ Decide whether to also expose a `Zun` alias (open question).
 ## Phase 4: Restore Bun 1.3.14 features (port upstream Zig to 0.17)
 
 The source for each feature is `bun-v1.3.14/src/<module>`. Every restored module is gated
-by upstream's own tests for it. Order, chosen so each step makes the next one testable:
+by upstream's own tests for it. **Hard rule: the test runner comes right after the CLI skeleton**, because every later
+restore is measured with it. Order, chosen so each step makes the next one testable:
 
 1. **CLI** (`src/cli`): real argument parsing and the subcommand skeleton. `zun run file.ts` with on-the-fly TS (the parser is in the tree, but cruller's README says transpiling on load is cut: Phase 1 finds out).
 2. **Test runner** (`src/test_runner`, `bun:test`). Restore it early so we can run Bun's own test suite as the spec.
@@ -58,8 +69,7 @@ by upstream's own tests for it. Order, chosen so each step makes the next one te
 4. **Shell** (`src/shell*`): `Bun.$`, `zun exec`.
 5. **Bundler + CSS** (`src/bundler`, `src/css`, `standalone_graph`): `zun build`, `--compile`.
 6. **The rest:** `napi` (native addons), `sql`, `md`, `Bun.Transpiler`, …
-7. **Platforms:** macOS next, Windows last (both were removed by cruller).
-- **Checkpoint after each item.**
+- **Checkpoint after each item.** Update `docs/status/parity.md` (test pass rates per area) after each one.
 
 ## Phase 5: Catch up to Bun 1.4.x
 
@@ -69,15 +79,27 @@ by upstream's own tests for it. Order, chosen so each step makes the next one te
 
 ## Phase 6: Language end-state (far future)
 
+Good **learn-Zig projects for the owner** (small, self-contained, with canary's Rust rewrite as a
+reference and the C library as an oracle): `histogram`, `hpack`, WebSocket framing, `png`.
+
 Replace non-Zig/Go/TS code where it's worth it: the lolhtml (Rust) binding, and C libraries with
 Zig ports or `std` equivalents (compression, hashing). Decide case by case.
 JavaScriptCore (C++, LGPL) is by far the largest item and may stay indefinitely.
 
+**Recurring cost: the JSC/WebKit version.** Zun is locked to the WebKit build that 1.3.14 used. Upgrading means updating the
+C++ bindings too. We need a policy for when to upgrade (open question).
+
+## Phase 7: Other platforms (after Linux parity)
+
+macOS first, then Windows, then FreeBSD. All three were removed by cruller, and the 1.3.14 code for them
+(`errno/*`, `platform/darwin`, `libuv_sys`, `windows_sys`, `path.win32`, platform C++ files) is the restore source.
+
 ## Open questions (bring to the next checkpoint)
 
-1. Platform order: Linux-only until Phase 4 is done, or restore macOS sooner?
+1. ~~Platform order~~ **Decided:** Linux only until Linux parity is done; macOS and Windows in Phase 7.
 2. Config file: read `bunfig.toml` for compatibility, use our own `zunfig.toml`, or both?
 3. Expose `globalThis.Zun` as an alias of `Bun`?
 4. Node target version for `process.version` (Bun 1.3.14 reports 24.3.0).
 5. N-API: restore early (many npm packages need it) or in item 6 as planned?
 6. Go's role: only for tooling like typescript-go, or more?
+7. JSC/WebKit upgrade policy: stay on the 1.3.14 WebKit until when?
