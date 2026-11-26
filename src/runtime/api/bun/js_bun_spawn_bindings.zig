@@ -951,6 +951,26 @@ pub fn spawnMaybeSync(
 
     should_close_memfd = false;
 
+    // Every error return above is past; the Subprocess will be returned to JS.
+    // Downgrade "socket-fd" slots from `.owned_fd` to `.unowned_fd` so
+    // `finalizeStreams` (on later GC) skips them and the caller is the only
+    // owner via `.stdio[i]` (TQ-10 / SPAWN-1). This must not happen earlier:
+    // the `Writable.init` error arm and the error returns after `toJS` above
+    // never give the Subprocess to the caller, so on those paths the slot has
+    // to stay `.owned_fd` for `finalizeStreams` to close. Same placement as
+    // Bun 1.4.5 `js_bun_spawn_bindings.rs`. On Windows `.socket_fd` was mapped
+    // to a plain libuv pipe in `Stdio.toWindows`, so there is nothing to do.
+    if (comptime Environment.isPosix) {
+        for (extra_fds.items, 0..) |opt, j| {
+            if (opt != .socket_fd) continue;
+            const slot = &subprocess.stdio_pipes.items[j];
+            switch (slot.*) {
+                .owned_fd => |fd| slot.* = .{ .unowned_fd = fd },
+                .unowned_fd, .unavailable => {},
+            }
+        }
+    }
+
     // Once everything is set up, we can add the abort listener
     // Adding the abort listener may call the onAbortSignal callback immediately if it was already aborted
     // Therefore, we must do this at the very end.

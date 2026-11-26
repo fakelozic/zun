@@ -12,6 +12,15 @@ pub const Stdio = union(enum) {
     array_buffer: jsc.ArrayBuffer.Strong,
     memfd: bun.FD,
     pipe,
+    /// Like `.pipe` at indices >= 3 (a socketpair), but once `Bun.spawn`
+    /// returns the Subprocess, the parent end is stored as
+    /// `ExtraPipe.unowned_fd`: whoever reads `subprocess.stdio[i]` owns it and
+    /// must close it, and `Subprocess.finalizeStreams` never does. Used by
+    /// `node:child_process`, which wraps extra `"pipe"` slots in
+    /// `net.connect({ fd })` (uSockets then closes the fd). Only valid at
+    /// indices >= 3 of an async spawn; `extract` rejects it everywhere else.
+    /// Port of Bun 1.4.5 `Stdio::SocketFd` (TQ-10 / SPAWN-1).
+    socket_fd,
     ipc,
     readable_stream: jsc.WebCore.ReadableStream,
 
@@ -187,6 +196,7 @@ pub const Stdio = union(enum) {
                 },
                 .dup2 => .{ .dup2 = .{ .out = stdio.dup2.out, .to = stdio.dup2.to } },
                 .capture, .pipe, .array_buffer, .readable_stream => .{ .buffer = {} },
+                .socket_fd => .{ .socket_fd = {} },
                 .ipc => .{ .ipc = {} },
                 .fd => |fd| .{ .pipe = fd },
                 .memfd => |fd| .{ .pipe = fd },
@@ -240,6 +250,10 @@ pub const Stdio = union(enum) {
                 },
                 .ipc => .{ .ipc = createZeroedPipe() },
                 .capture, .pipe, .array_buffer, .readable_stream => .{ .buffer = createZeroedPipe() },
+                // Windows extra stdio is a libuv pipe handle with no raw-fd
+                // ownership to hand over, so `socket-fd` behaves like `pipe`
+                // there (same as Bun 1.4.5).
+                .socket_fd => .{ .buffer = createZeroedPipe() },
                 .fd => |fd| .{ .pipe = fd },
                 .dup2 => .{ .dup2 = .{ .out = stdio.dup2.out, .to = stdio.dup2.to } },
                 .path => |pathlike| .{ .path = pathlike.slice() },
@@ -345,6 +359,16 @@ pub const Stdio = union(enum) {
                 out_stdio.* = Stdio{ .ignore = {} };
             } else if (str.eqlComptime("pipe") or str.eqlComptime("overlapped")) {
                 out_stdio.* = Stdio{ .pipe = {} };
+            } else if (str.eqlComptime("socket-fd")) {
+                if (i < 3) {
+                    return globalThis.throwInvalidArguments("stdio: 'socket-fd' is only supported at indices >= 3", .{});
+                }
+                if (is_sync) {
+                    // Bun.spawnSync's result has no .stdio, so the caller could
+                    // never receive the fd it is supposed to own.
+                    return globalThis.throwInvalidArguments("stdio: 'socket-fd' cannot be used with spawnSync", .{});
+                }
+                out_stdio.* = Stdio{ .socket_fd = {} };
             } else if (str.eqlComptime("ipc")) {
                 out_stdio.* = Stdio{ .ipc = {} };
             } else {

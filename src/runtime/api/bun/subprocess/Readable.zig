@@ -67,6 +67,8 @@ pub const Readable = union(enum) {
             .array_buffer, .blob => Output.panic("TODO: implement ArrayBuffer & Blob support in Stdio readable", .{}),
             .capture => Output.panic("TODO: implement capture support in Stdio readable", .{}),
             .readable_stream => Readable{ .ignore = {} }, // ReadableStream is handled separately
+            // `Stdio.extract` rejects "socket-fd" at i < 3.
+            .socket_fd => Output.panic("socket_fd at stdout/stderr", .{}),
         };
     }
 

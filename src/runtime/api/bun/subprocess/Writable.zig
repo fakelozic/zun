@@ -155,6 +155,8 @@ pub const Writable = union(enum) {
                 .ipc, .capture => {
                     return Writable{ .ignore = {} };
                 },
+                // `Stdio.extract` rejects "socket-fd" at i < 3.
+                .socket_fd => @panic("socket_fd at stdin"),
             }
         }
 
@@ -232,6 +234,8 @@ pub const Writable = union(enum) {
             .ipc, .capture => {
                 return Writable{ .ignore = {} };
             },
+            // `Stdio.extract` rejects "socket-fd" at i < 3.
+            .socket_fd => @panic("socket_fd at stdin"),
         }
     }
 

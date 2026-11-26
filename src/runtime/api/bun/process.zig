@@ -1073,6 +1073,12 @@ pub const PosixSpawnOptions = struct {
         inherit: void,
         ignore: void,
         buffer: void,
+        /// Like `.buffer` but only valid in `extra_fds` (index >= 3). The
+        /// spawn records the parent end as `.owned_fd` like `.buffer`, so every
+        /// error path before the JS Subprocess is returned still closes it;
+        /// `js_bun_spawn_bindings` downgrades it to `.unowned_fd` once the
+        /// caller can read it from `.stdio[i]` (TQ-10 / SPAWN-1).
+        socket_fd: void,
         ipc: void,
         pipe: bun.FD,
         // TODO: remove this entry, it doesn't seem to be used
@@ -1197,8 +1203,9 @@ pub const PosixSpawnResult = struct {
         /// We created this fd (e.g. socketpair for `"pipe"`); expose it via
         /// `Subprocess.stdio[N]` and close it in `finalizeStreams`.
         owned_fd: bun.FD,
-        /// The caller supplied this fd in the stdio array; expose it via
-        /// `Subprocess.stdio[N]` but never close it — the caller retains ownership.
+        /// The caller owns this fd; expose it via `Subprocess.stdio[N]` but never
+        /// close it. Either the caller supplied it in the stdio array, or it is a
+        /// `"socket-fd"` slot that Bun.spawn handed to the caller (TQ-10).
         unowned_fd: bun.FD,
         /// Nothing to expose for this slot (`"ignore"`, `"inherit"`, a path, or
         /// the IPC channel after ownership has been transferred to uSockets).
@@ -1452,6 +1459,9 @@ pub fn spawnProcessPosix(
             .ipc, .ignore => {
                 try actions.openZ(fileno, "/dev/null", flag | bun.O.CREAT, 0o664);
             },
+            // `Stdio.extract` rejects "socket-fd" at i < 3, so it never gets here.
+            // A panic (not `unreachable`) keeps release builds defined if that changes.
+            .socket_fd => @panic("socket_fd at stdin/stdout/stderr"),
             .path => |path| {
                 try actions.open(fileno, path, flag | bun.O.CREAT, 0o664);
             },
@@ -1555,7 +1565,7 @@ pub fn spawnProcessPosix(
                 try actions.open(fileno, path, bun.O.RDWR | bun.O.CREAT, 0o664);
                 try extra_fds.append(.unavailable);
             },
-            .ipc, .buffer => {
+            .ipc, .buffer, .socket_fd => {
                 const fds: [2]bun.FD = try bun.sys.socketpair(
                     std.posix.AF.UNIX,
                     std.posix.SOCK.STREAM,
@@ -1563,7 +1573,7 @@ pub fn spawnProcessPosix(
                     if (ipc == .ipc) .nonblocking else .blocking,
                 ).unwrap();
 
-                if (!options.sync and ipc == .buffer)
+                if (!options.sync and (ipc == .buffer or ipc == .socket_fd))
                     try bun.sys.setNonblocking(fds[0]).unwrap();
 
                 try to_close_at_end.append(fds[1]);
@@ -1572,6 +1582,12 @@ pub fn spawnProcessPosix(
                 try actions.dup2(fds[1], fileno);
                 if (fds[1] != fileno)
                     try actions.close(fds[1]);
+                // `.socket_fd` is recorded as `.owned_fd` too, on purpose: until
+                // Bun.spawn hands the Subprocess to JS, nobody else can see this fd,
+                // so `to_close_on_error` (spawn failure) and `finalizeStreams` (a
+                // later error in js_bun_spawn_bindings) must still close it. The
+                // downgrade to `.unowned_fd` happens there after the last fallible
+                // step. Same as Bun 1.4.5 `spawn_process_posix`.
                 try extra_fds.append(.{ .owned_fd = fds[0] });
             },
             .pipe => |fd| {
