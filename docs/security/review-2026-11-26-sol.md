@@ -1,5 +1,9 @@
 # Independent security review of bootstrap
 
+> **Integration owner's triage (2026-11-26):** F-1 **confirmed at runtime** (zun accepts an unrelated `ca`; Bun 1.4.5 and
+> Node reject) → `known-issues.md` TLS-CA-1. The other findings are from source reading and are **not yet confirmed**;
+> each gets a repro or a rebuttal before it is fixed. F-3 and F-4 overlap backports H6 and H2, and C2-2 / F-2 overlap H3.
+
 Reviewed `0a5b26b` on Linux, including the six commits below. Findings come from source, history, and local copies
 of the pinned dependencies and Bun 1.4.5. I used no build, network, or runtime probes. The report marks
 runtime-dependent claims as unconfirmed where source inspection leaves a prerequisite unresolved.

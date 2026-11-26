@@ -97,6 +97,29 @@ rendered by a server). Review scope: `src/md/*.zig`, `src/runtime/api/MarkdownOb
   fd exhaustion. Same as upstream 1.3.14. Found by the TQ-10 sibling search; not reproduced yet.
 - **Plan:** close the previous fd (or reject the message) when one is already pending; add a test that sends two fds.
 
+### TLS-CA-1 (review F-1): an explicit `ca` *adds* to the default roots instead of replacing them (High), open, confirmed
+
+- **What:** `fetch(url, { tls: { ca } })` and `tls.connect({ ca })` trust the given CA **plus** every bundled/system/
+  `NODE_EXTRA_CA_CERTS` root. Node documents `ca` as replacing the default trust; Bun 1.4.5 behaves the same as Node.
+- **Impact:** a client that pins a private CA for a service still accepts any publicly trusted certificate for that host,
+  so a mis-issued or compromised public CA can intercept it. This is what pinning is meant to prevent.
+- **Where:** `packages/bun-usockets/src/crypto/openssl.c` `us_ssl_ctx_build_raw` (both CA branches start from
+  `us_get_default_ca_store()` and `X509_STORE_add_cert` the explicit CAs), shared by fetch, `node:tls`/`https`, and the
+  CONNECT inner context.
+- **Found by:** independent review (`docs/security/review-2026-11-26-sol.md` F-1), **confirmed at runtime** 2026-11-26:
+  a valid, unrelated private root as `ca`, connecting to `https://example.com`:
+
+  | runtime | `fetch` | `tls.connect` |
+  |---|---|---|
+  | zun (snapshot `0a5b26b`) | **200** | **connected, `authorized=true`** |
+  | Bun 1.4.5 | `UNABLE_TO_GET_ISSUER_CERT_LOCALLY` | `UNABLE_TO_GET_ISSUER_CERT_LOCALLY` |
+  | Node 26 | n/a | `UNABLE_TO_GET_ISSUER_CERT_LOCALLY` |
+
+  `test-zun-fetch-tls-options.mjs` missed it because its wrong-CA case uses a server that the default store rejects too,
+  and FETCH-1's "bogus ca rejects example.com" probe used malformed PEM (context creation failed), not a valid other root.
+- **Plan:** RCA + fix as Bun 1.4.5 does (empty store when `ca` is given), regression test with a default-trusted peer
+  and an unrelated valid `ca` (needs a build; queued after the CLI restore). Until fixed: **do not rely on `ca` pinning**.
+
 ### RT-4: `__crullerHandle` SSR dispatch drops JS exceptions (dormant), open
 
 - `src/rt/jsc_engine.zig` `callHandler` / `src/rt/server_dispatch.zig:59`: a throw in `globalThis.__crullerHandle`
