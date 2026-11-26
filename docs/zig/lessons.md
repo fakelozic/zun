@@ -119,3 +119,20 @@ produces would have been "invalid enum value" (a panic in safe builds) or undefi
 **Do:** enums that mirror C values get a `_` member; use `std.enums.tagName(E, v) orelse "unknown"` instead of
 `@tagName`, and never end a lookup over C values in `unreachable`. Probe: `probes/nonexhaustive-enum/enum.zig`.
 When bumping a C dependency, diff its public headers for new enum values before building.
+
+## 2026-11-26: a `noreturn` call from Zig doesn't unpoison ASAN's stack shadow; std owns a per-thread sigaltstack
+
+Found in TQ-3 (`docs/rca/TQ-3-worker-thread-exit-under-asan.md`). Two verified facts:
+
+- Clang emits `__asan_handle_no_return()` before every call to a `noreturn` function in instrumented C/C++; that
+  clears the redzones of the frames about to be abandoned. **Zig code is not ASAN-instrumented**, so a `noreturn`
+  call made from Zig (`pthread_exit`, `longjmp`, a stack switch) while C++ frames sit above it on the stack leaves
+  their redzones poisoned. The next code that runs on that memory (here pthread TSD destructors) gets a bogus
+  `stack-buffer-underflow` or ASAN's `kCurrentStackFrameMagic` CHECK. On any build the skipped C++ destructors are
+  a real bug. **Do:** end threads by returning; never leave C++ frames by a non-local exit from Zig.
+- Zig 0.16/0.17 std gives every `std.Thread` and the main thread a TLS alt signal stack
+  (`std.options.signal_stack_size`, default `1 << 18`; `Thread.callFn` → `maybeAttachSignalStack`, `Thread.zig:1744`
+  in 0.17.1). ASAN also gives each thread its own and `munmap`s whatever is current at thread exit, so under ASAN
+  an exiting `std.Thread` makes ASAN try to unmap TLS (`failed to deallocate 0x40000 … error code: 22`). Turn it off
+  per build with `.signal_stack_size = if (asan) null else (std.Options{}).signal_stack_size` (probe:
+  `probes/signal-stack/options.zig`).

@@ -54,18 +54,48 @@ rendered by a server). Review scope: `src/md/*.zig`, `src/runtime/api/MarkdownOb
 
 ## Runtime (found during the md restore)
 
-### RT-3: ASAN `CHECK failed` at Web Worker thread teardown (debug build), open
+### RT-3 / TQ-3: Worker threads end with `pthread_exit` inside live C++ frames (all builds), open, RCA done
 
-- Every `new Worker(...)` (Web Worker API), even one that only `postMessage`s, makes the ASAN debug build print
-  `AddressSanitizer: CHECK failed: asan_thread.cpp:369 "((ptr[0] == kCurrentStackFrameMagic)) != (0)"` from the worker
-  thread at exit (`ASAN_OPTIONS=log_path=…` shows the full line; on stderr it is cut off after the `====` banner).
-  The main process still exits 0 (a racing `Die()` in the worker thread). `worker_threads` workers behave the same way
-  only when they exit normally; untested.
-- Found 2026-11-26 by the RT-2 sibling search (`docs/rca/RT-2-cjs-entry-errors-swallowed.md`). Not related to RT-2
-  (no worker code was touched). Not yet known whether a release build is affected or whether it is real stack
-  corruption vs. an ASAN/fake-stack interaction with how the worker thread exits (e.g. `pthread_exit` / stack switch).
-- **Plan:** reproduce on Bun 1.3.14's own ASAN build if possible; check how `WebWorker.zig` ends the thread. Until
-  then, treat Web Workers as untested in zun.
+- **Root cause found** (`docs/rca/TQ-3-worker-thread-exit-under-asan.md`). Every Worker thread ends with
+  `bun.exitThread()` → `pthread_exit` called from Zig (`src/jsc/web_worker.zig:738`) while C++ frames are live:
+  always `JSC__VM__holdAPILock`'s `JSLockHolder`, and on an uncaught error the whole JS stack
+  (`onUnhandledRejection` → `shutdown()`, `:819`), which tears down the `JSC::VM` while it is still entered.
+  Skipped destructors leak the worker's VM (its API lock is never released). It is not a use-after-free today only
+  because the abandoned frames are never resumed. Inherited from Bun 1.3.14; Bun 1.4.5 redesigned it (thread
+  returns normally).
+- **The ASAN reports are a consequence, not an out-of-bounds copy:** the abandoned frames' redzones stay poisoned
+  (Zig never calls `__asan_handle_no_return`), and the pthread TSD destructors that run next trip
+  `stack-buffer-underflow` in `pas_deallocate`'s own frame, or ASAN's `kCurrentStackFrameMagic` CHECK. Proven by
+  calling `__asan_handle_no_return()` at `pthread_exit` under gdb: the report disappears.
+- **Second ASAN-only issue:** Zig ≥ 0.16 std attaches a TLS sigaltstack to every `std.Thread`; ASAN `munmap`s the
+  current alt stack at thread exit and fails (`failed to deallocate 0x40000 … error code: 22`). With a page-aligned
+  buffer it would unmap live TLS. Introduced by the Zig 0.16 port.
+- **Impact:** 47 parity tests (31 worker_threads) report SANITIZER/CRASH, so ASAN is blind on Worker code until
+  this is fixed. Per-Worker VM leak in production.
+- **Plan:** fix A (thread returns normally, port of 1.4.5) and fix B (`signal_stack_size = null` under ASAN) from
+  the RCA. Regression test `test/js/node/test/parallel/test-zun-worker-thread-exit.js` (fails on 0a5b26b).
+
+### SPAWN-1 / TQ-10: extra stdio `"pipe"` fds of `child_process.spawn` closed twice (High), open, RCA done
+
+- `child_process.spawn(…, { stdio: [..., 'pipe'] })` with a slot at index ≥ 3: the parent end of the socketpair is
+  owned by both the native `Subprocess` (`stdio_pipes[i] = .owned_fd`, closed in `finalizeStreams`,
+  `src/runtime/api/bun/subprocess.zig:775`) and the `net.Socket` that `child_process.ts:1219` wraps around it
+  (uSockets closes it on socket close). The second close runs from the GC finalizer, often after the number was
+  reused, so **zun closes an unrelated fd** (file, socket, TLS connection). Silent in release builds. Debug builds
+  panic only when the number was not reused.
+- Inherited from Bun 1.3.14 (identical code); fixed in Bun 1.4.5 by a `"socket-fd"` stdio mode that makes JS the
+  only owner. RCA and proposed port: `docs/rca/TQ-10-extra-stdio-pipe-double-close.md`.
+- **Mitigation now:** avoid extra `"pipe"` stdio slots (index ≥ 3) in `child_process.spawn`/`fork`/`cluster`, or
+  keep the `ChildProcess` reachable for the life of the process.
+- Regression test `test/js/node/test/parallel/test-zun-spawn-extra-pipe-double-close.js` (fails on 0a5b26b:
+  "fd 12 was closed behind our back").
+
+### IPC-1: an IPC peer can leak parent fds via repeated SCM_RIGHTS (Low), open
+
+- `src/jsc/ipc.zig` `onFd` (`:1347-1350`) overwrites an already-stashed `incoming_fd` without closing it ("overwriting"
+  is only logged). A peer that sends several fds before the handle message leaks one fd each time, which can lead to
+  fd exhaustion. Same as upstream 1.3.14. Found by the TQ-10 sibling search; not reproduced yet.
+- **Plan:** close the previous fd (or reject the message) when one is already pending; add a test that sends two fds.
 
 ### RT-4: `__crullerHandle` SSR dispatch drops JS exceptions (dormant), open
 
