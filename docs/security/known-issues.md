@@ -75,7 +75,7 @@ rendered by a server). Review scope: `src/md/*.zig`, `src/runtime/api/MarkdownOb
 - **Plan:** fix A (thread returns normally, port of 1.4.5) and fix B (`signal_stack_size = null` under ASAN) from
   the RCA. Regression test `test/js/node/test/parallel/test-zun-worker-thread-exit.js` (fails on 0a5b26b).
 
-### SPAWN-1 / TQ-10: extra stdio `"pipe"` fds of `child_process.spawn` closed twice (High), open, RCA done
+### SPAWN-1 / TQ-10: extra stdio `"pipe"` fds of `child_process.spawn` closed twice (High), open, fix prepared (not built)
 
 - `child_process.spawn(…, { stdio: [..., 'pipe'] })` with a slot at index ≥ 3: the parent end of the socketpair is
   owned by both the native `Subprocess` (`stdio_pipes[i] = .owned_fd`, closed in `finalizeStreams`,
@@ -89,6 +89,10 @@ rendered by a server). Review scope: `src/md/*.zig`, `src/runtime/api/MarkdownOb
   keep the `ChildProcess` reachable for the life of the process.
 - Regression test `test/js/node/test/parallel/test-zun-spawn-extra-pipe-double-close.js` (fails on 0a5b26b:
   "fd 12 was closed behind our back").
+- **Fix prepared, not yet built/verified:** port of 1.4.5's `"socket-fd"` stdio mode (`child_process` maps extra
+  `"pipe"` slots to it; the native slot is handed to the caller after the last fallible step of `Bun.spawn`). Close
+  this entry once the integration build passes the regression test. Plain `Bun.spawn` `"pipe"` slots wrapped by user
+  code keep the old double ownership (1.4.5's `getStdio` ownership transfer not ported). IPC-1 is not affected.
 
 ### IPC-1: an IPC peer can leak parent fds via repeated SCM_RIGHTS (Low), open
 

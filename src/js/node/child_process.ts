@@ -1213,9 +1213,14 @@ class ChildProcess extends EventEmitter {
       default:
         switch (io) {
           case "pipe":
+          case "socket-fd":
             if (!NetModule) NetModule = require("node:net");
+            // #spawn mapped "pipe" at i >= 3 to "socket-fd", so the parent-end
+            // fd in handle.stdio[i] is unowned by the Subprocess: we own it and
+            // net.connect({ fd }) -> uSockets closes it on socket close
+            // (TQ-10 / SPAWN-1).
             const fd = handle && handle.stdio[i];
-            if (!fd) return null;
+            if (fd == null) return null;
             return NetModule.connect({ fd });
         }
         return null;
@@ -1239,7 +1244,7 @@ class ChildProcess extends EventEmitter {
       if (element === "undefined") {
         return undefined;
       }
-      if (element !== "pipe") {
+      if (element !== "pipe" && element !== "socket-fd") {
         result[i] = null;
         continue;
       }
@@ -1295,6 +1300,19 @@ class ChildProcess extends EventEmitter {
 
     const stdio = options.stdio || ["pipe", "pipe", "pipe"];
     const bunStdio = getBunStdioFromOptions(stdio);
+    // Extra "pipe" slots (i >= 3) are wrapped in a net.Socket by
+    // #getBunSpawnIo, which hands the fd to uSockets (uSockets closes it on
+    // socket close). Use Bun.spawn's "socket-fd" so the native Subprocess
+    // gives up ownership of the parent end and Subprocess.finalizeStreams
+    // never closes it a second time (TQ-10 / SPAWN-1; port of Bun 1.4.5).
+    // Async path only: spawnSync never wraps extra fds in net.Socket and must
+    // keep them owned so finalizeStreams still closes them. On Windows extra
+    // stdio is a libuv pipe handle with no raw-fd handoff, so leave "pipe".
+    if (process.platform !== "win32") {
+      for (let i = 3; i < bunStdio.length; i++) {
+        if (bunStdio[i] === "pipe") bunStdio[i] = "socket-fd";
+      }
+    }
 
     const has_ipc = $isJSArray(stdio) && stdio.includes("ipc");
 

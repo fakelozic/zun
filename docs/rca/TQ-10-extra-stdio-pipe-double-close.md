@@ -1,7 +1,7 @@
 # TQ-10: extra stdio `"pipe"` fds of `child_process.spawn` have two owners and get closed twice
 
-- **Status:** open. Root cause found, fix proposed below (a port of the Bun 1.4.5 fix), **not built** (no build slot
-  when this was written).
+- **Status:** fix prepared (port of Bun 1.4.5 `"socket-fd"`, see "Fix (implemented)"), **not yet built or verified**
+  (no build slot). Keep open until the integration owner builds it and the regression test passes.
 - **Severity:** high, security-relevant. The second `close()` happens when the GC finalizes the `Subprocess`, at an
   unpredictable time. By then the fd number has often been reused, so **zun closes an unrelated fd**: a file, a
   listening socket, a TLS connection, an epoll fd. Release builds do this silently. Only debug builds notice, and only
@@ -91,7 +91,53 @@ stores that slot as `UnownedFd`. JS then has the only owner, and `finalize_strea
   reason first (TQ-8), so the report was read as fallout.
 - No test checked that fds survive a `Subprocess` being finalized.
 
-## Fix (proposed, not built): port the Bun 1.4.5 ownership handoff
+## Fix (implemented, not yet built/verified): port the Bun 1.4.5 ownership handoff
+
+Implemented after reading 1.4.5's `spawn/stdio.rs`, `spawn_sys/spawn_process.rs`, `js_bun_spawn_bindings.rs`,
+`subprocess/{Readable,Writable}.rs`, `child_process.ts` and its `spawn.test.ts`. One deliberate difference from the
+proposal below, taken from 1.4.5: the slot is **not** recorded as `.unowned_fd` at spawn time. It starts as
+`.owned_fd` like `"pipe"`, and is downgraded to `.unowned_fd` only after the last fallible step of `Bun.spawn`.
+That keeps a single owner on every path:
+
+| Path | Who closes the parent end |
+|------|---------------------------|
+| `posix_spawn` / setup fails | `to_close_on_error` in `spawnProcessPosix` (unchanged) |
+| `Writable.init` (stdin) fails | `finalizeStreams()` in its error arm (slot still `.owned_fd`) |
+| JS exception / stdin or stdout/stderr `start()` fails after `toJS` | the `Subprocess` GC finalizer → `finalizeStreams` (slot still `.owned_fd`; JS never got the Subprocess) |
+| Success | the caller, via `.stdio[i]`; `finalizeStreams` skips `.unowned_fd` |
+| Child exits early | no change: process exit does not touch `stdio_pipes`; the caller still owns the fd |
+| `child_process` never creates the socket | fd leaks (no double close). See "Residual" below |
+
+Changes:
+
+- `src/runtime/api/bun/spawn/stdio.zig`: new `Stdio.socket_fd`. `extract` parses `"socket-fd"`, throws
+  `'socket-fd' is only supported at indices >= 3` for i < 3 and `'socket-fd' cannot be used with spawnSync` for sync
+  spawns (same messages as 1.4.5). `toPosix` maps it to `SpawnOptions.Stdio.socket_fd`; `toWindows` maps it to a
+  plain libuv pipe (`.buffer`), as 1.4.5 does. `isPiped`/`canUseMemfd` treat it as not piped (1.4.5 same).
+- `src/runtime/api/bun/process.zig`: `PosixSpawnOptions.Stdio.socket_fd`. The extra-fd loop handles it like
+  `.buffer` (socketpair, non-blocking parent end, child end `dup2`'d) and records `.owned_fd`. The stdin/stdout/stderr
+  loop panics on it (unreachable by `extract`; a panic rather than `unreachable` keeps release builds defined).
+- `src/runtime/api/bun/subprocess/{Readable,Writable}.zig`: panic prongs for the same unreachable case.
+- `src/runtime/api/bun/js_bun_spawn_bindings.zig`: after the last error return (just before the abort listener, the
+  same place as 1.4.5), every `extra_fds[j] == .socket_fd` slot whose `stdio_pipes[j]` is `.owned_fd` becomes
+  `.unowned_fd`. POSIX only.
+- `src/js/node/child_process.ts`: `#spawn` rewrites `bunStdio[i] === "pipe"` to `"socket-fd"` for i >= 3 when not on
+  Windows; `#getBunSpawnIo` and `#createStdioObject` accept `"socket-fd"` next to `"pipe"`. `spawnSync` unchanged.
+- `packages/bun-types/bun.d.ts`: documents `"socket-fd"` and who owns `.stdio[i]`.
+
+**Bun.spawn surface:** `"socket-fd"` is reachable from `Bun.spawn` too, as in 1.4.5 (it is in 1.4.5's public
+`bun.d.ts`). Existing `Bun.spawn` users are unaffected: `"pipe"` behaves as before.
+
+**Not ported (open question):** 1.4.5 also changed `Subprocess.getStdio` to downgrade *every* `.owned_fd` slot to
+`.unowned_fd` once `.stdio` is read ("reading this property transfers ownership of any `pipe` fds to the caller"),
+which also fixes the `Bun.spawn` sibling below, at the cost of leaking the fd for callers who read `.stdio` and never
+close it. That changes existing `Bun.spawn` semantics, so it was left out of this change; decide separately.
+
+**Residual (same as 1.4.5):** if `child_process` gets the `Subprocess` back but never wraps the fd (an exception in
+`#spawn` between `Bun.spawn` and the eager `this.stdio` read at the end of the `try`, or `net.connect({ fd })`
+throwing), nobody owns the fd and it leaks until exit. A leak, never a close of someone else's fd.
+
+### Original proposal (kept for the record)
 
 1. `src/runtime/api/bun/spawn/stdio.zig` (~`:346`): accept the string `"socket-fd"` as a new `Stdio` variant
    (`.socket_fd`, POSIX only; on Windows fall back to `.pipe` or reject it). In the `asSpawnOption` mapping (~`:189`)
@@ -118,7 +164,12 @@ they can pass `"socket-fd"` to opt into owning it; document that next to `stdio`
 `['ignore','ignore','ignore','pipe']`, waits for `close`, destroys `stdio[3]`, then opens 8 files so the released
 number is reused (it asserts it was), forces GC (`Bun.gc(true)` ×10), and checks every file fd is still open.
 **Fails on the snapshot**: `AssertionError: … fd 12 was closed behind our back` (silent close of a reused fd, the
-release-build failure mode, reproduced on the debug build). It should pass once the fix is in.
+release-build failure mode, reproduced on the debug build). Re-checked 2026-11-26 on `snap-0a5b26b`: still fails. It
+should pass once the fix is built.
+
+Also added (from 1.4.5's `spawn.test.ts`) to `test/js/bun/spawn/spawn.test.ts`, `describe("stdio 'socket-fd'")`:
+rejected at i < 3, rejected with `spawnSync`, and a caller-owned fd that is still readable after the child exits and
+closed only by the caller.
 `test-net-socket-constructor` also needs TQ-8 fixed before it can pass.
 
 ## Sibling search
@@ -128,7 +179,7 @@ Searched for native code that hands a raw fd number to JS while keeping ownershi
 
 - **IPC stdio slot** (`js_bun_spawn_bindings.zig:839`): already hands off correctly (`.unavailable`).
 - **SCM_RIGHTS fds received over IPC** (`src/jsc/ipc.zig`): handed to JS with `bun.take(&incoming_fd)` (single owner,
-  OK). **Separate finding (leak, not double close):** `onFd` (`ipc.zig:1347-1350`) overwrites an already-stashed
+  OK). **Not covered by the `"socket-fd"` fix** (different code path). **Separate finding (leak, not double close):** `onFd` (`ipc.zig:1347-1350`) overwrites an already-stashed
   `incoming_fd` and only logs "overwriting". The earlier fd leaks, so an IPC peer that sends several fds per handle
   message can exhaust the process's fds. Same as upstream 1.3.14. Logged in `docs/security/known-issues.md` (IPC-1).
 - **`memfd_create` binding** (`node_fs_binding.zig:227`): returns a fresh fd, owned by JS only. OK.
@@ -138,7 +189,8 @@ Searched for native code that hands a raw fd number to JS while keeping ownershi
   (`net.ts`, `Ipc.ts:221`, `cluster/RoundRobinHandle.ts:32`): adopting a number the user got from another live
   owner gives double ownership by user choice. Node behaves the same. Not a zun bug; documentation only.
 - **`Bun.spawn` `stdio[N]`** for extra `"pipe"` slots: native-owned by design. Users wrapping it themselves hit this
-  bug. Covered by the `"socket-fd"` opt-in above.
+  bug. They can now opt into `"socket-fd"`; the 1.4.5 "reading `.stdio` transfers ownership" change that would fix it
+  for plain `"pipe"` is not ported (open question above).
 
 ## Lessons
 
