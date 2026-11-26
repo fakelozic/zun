@@ -298,39 +298,21 @@ pub const String = extern struct {
             // This should only happen for non-ascii strings that are exactly 8 bytes.
             // so that's an edge-case
             if ((in[max_inline_len - 1]) >= 128)
-                @as(String, @bitCast((@as(
-                    u64,
-                    0,
-                ) | @as(
-                    u64,
-                    @as(
-                        max_addressable_space,
-                        @truncate(@as(
-                            u64,
-                            @bitCast(Pointer.init(buf, in)),
-                        )),
-                    ),
-                )) | 1 << 63))
+                initExternal(Pointer.init(buf, in))
             else
                 String{ .bytes = .{ in[0], in[1], in[2], in[3], in[4], in[5], in[6], in[7] } },
 
-            else => @as(
-                String,
-                @bitCast((@as(
-                    u64,
-                    0,
-                ) | @as(
-                    u64,
-                    @as(
-                        max_addressable_space,
-                        @truncate(@as(
-                            u64,
-                            @bitCast(Pointer.init(buf, in)),
-                        )),
-                    ),
-                )) | 1 << 63),
-            ),
+            else => initExternal(Pointer.init(buf, in)),
         };
+    }
+
+    /// A String that points into the external buffer: the Pointer's bits, truncated to
+    /// `max_addressable_space`, with the top bit set. Zig 0.17 rejects `@bitCast` on
+    /// extern structs, so the punning goes through `bun.memCast` (in-memory bytes,
+    /// the same result as the old `@bitCast` on this little-endian layout).
+    fn initExternal(pointer: Pointer) String {
+        const bits: u64 = @as(u64, @as(max_addressable_space, @truncate(bun.memCast(u64, pointer)))) | 1 << 63;
+        return bun.memCast(String, bits);
     }
 
     pub fn initInline(
@@ -386,7 +368,7 @@ pub const String = extern struct {
     ) OOM!String {
         try buf.appendSlice(allocator, in);
         const in_buf = buf.items[buf.items.len - in.len ..];
-        return @bitCast((@as(u64, 0) | @as(u64, @as(max_addressable_space, @truncate(@as(u64, @bitCast(Pointer.init(buf.items, in_buf))))))) | 1 << 63);
+        return initExternal(Pointer.init(buf.items, in_buf));
     }
 
     pub fn eql(this: String, that: String, this_buf: []const u8, that_buf: []const u8) bool {
@@ -451,7 +433,7 @@ pub const String = extern struct {
     };
 
     pub inline fn ptr(this: String) Pointer {
-        return @as(Pointer, @bitCast(@as(u64, @as(u63, @truncate(@as(u64, @bitCast(this)))))));
+        return bun.memCast(Pointer, @as(u64, @as(u63, @truncate(bun.memCast(u64, this)))));
     }
 
     pub const toJS = @import("../semver_jsc/SemverString_jsc.zig").toJS;

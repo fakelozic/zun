@@ -644,7 +644,7 @@ pub const ID = extern struct {
     kind: Kind.Big = .setTimeout,
 
     pub inline fn asyncID(this: ID) u64 {
-        return @bitCast(this);
+        return bun.memCast(u64, this);
     }
 
     pub fn repeats(this: ID) bool {
