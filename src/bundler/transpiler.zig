@@ -929,7 +929,10 @@ pub const Transpiler = struct {
                 // this is incorrect for Node.js files which are CommonJS modules
                 opts.features.top_level_await = true;
 
-                opts.macro_context = undefined;
+                opts.macro_context = &transpiler.macro_context.?;
+                if (target != .bun_macro) {
+                    opts.macro_context.javascript_object = this_parse.macro_js_ctx;
+                }
 
                 opts.features.is_macro_runtime = target == .bun_macro;
                 opts.features.replace_exports = this_parse.replace_exports;
