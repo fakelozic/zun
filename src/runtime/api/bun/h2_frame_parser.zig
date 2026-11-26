@@ -125,8 +125,12 @@ const UInt31WithReserved = packed struct(u32) {
         return .{ .uint31 = value, .reserved = reserved };
     }
 
+    /// Wire layout (RFC 9113 §5.3.1, §6.3): the reserved/E bit is bit 31 and the
+    /// value is bits 0..30. Not `@bitCast`: in a packed struct the first field is
+    /// the least significant bit, so a bitcast would put `reserved` at bit 0 and
+    /// shift the value left by one (Bun 1.3.14 bug, fixed in Bun 1.4.5).
     pub inline fn toUInt32(value: UInt31WithReserved) u32 {
-        return @bitCast(value);
+        return h2_wire.uint31WithReserved(value.uint31, value.reserved);
     }
 
     pub inline fn fromBytes(src: []const u8) UInt31WithReserved {
@@ -135,68 +139,22 @@ const UInt31WithReserved = packed struct(u32) {
     }
 
     pub inline fn write(this: UInt31WithReserved, comptime Writer: type, writer: Writer) bool {
-        var value: u32 = this.uint31;
-        if (this.reserved) {
-            value |= 0x80000000;
-        }
-
-        value = @byteSwap(value);
-
-        return (writer.write(std.mem.asBytes(&value)) catch 0) != 0;
+        var bytes: [4]u8 = undefined;
+        std.mem.writeInt(u32, &bytes, this.toUInt32(), .big);
+        return (writer.write(&bytes) catch 0) != 0;
     }
 };
 
-const StreamPriority = packed struct(u40) {
-    streamIdentifier: u32 = 0,
-    weight: u8 = 0,
+// Wire structs: explicit big-endian decode/encode, shared with fetch's HTTP/2
+// client (src/http/h2_wire.zig). Never byte-swap or bitcast a packed struct to
+// get wire bytes (H2C-1, docs/rca/H2C-1-http2-frame-byte-order.md).
+const StreamPriority = h2_wire.StreamPriority;
+const FrameHeader = h2_wire.FrameHeader;
+const SettingsPayloadUnit = h2_wire.SettingsPayloadUnit;
 
-    pub const byteSize: usize = 5;
-    pub inline fn write(this: *StreamPriority, comptime Writer: type, writer: Writer) bool {
-        var swap = this.*;
-        std.mem.byteSwapAllFields(StreamPriority, &swap);
-
-        return (writer.write(std.mem.asBytes(&swap)[0..StreamPriority.byteSize]) catch 0) != 0;
-    }
-
-    pub inline fn from(dst: *StreamPriority, src: []const u8) void {
-        @memcpy(@as(*[StreamPriority.byteSize]u8, @ptrCast(dst)), src);
-        std.mem.byteSwapAllFields(StreamPriority, dst);
-    }
-};
-
-const FrameHeader = packed struct(u72) {
-    length: u24 = 0,
-    type: u8 = @intFromEnum(FrameType.HTTP_FRAME_SETTINGS),
-    flags: u8 = 0,
-    streamIdentifier: u32 = 0,
-
-    pub const byteSize: usize = 9;
-    pub inline fn write(this: *FrameHeader, comptime Writer: type, writer: Writer) bool {
-        var swap = this.*;
-        std.mem.byteSwapAllFields(FrameHeader, &swap);
-
-        return (writer.write(std.mem.asBytes(&swap)[0..FrameHeader.byteSize]) catch 0) != 0;
-    }
-
-    pub inline fn from(dst: *FrameHeader, src: []const u8, offset: usize, comptime end: bool) void {
-        @memcpy(@as(*[FrameHeader.byteSize]u8, @ptrCast(dst))[offset .. src.len + offset], src);
-        if (comptime end) {
-            std.mem.byteSwapAllFields(FrameHeader, dst);
-        }
-    }
-};
-
-const SettingsPayloadUnit = packed struct(u48) {
-    type: u16,
-    value: u32,
-    pub const byteSize: usize = 6;
-    pub inline fn from(dst: *SettingsPayloadUnit, src: []const u8, offset: usize, comptime end: bool) void {
-        @memcpy(@as(*[SettingsPayloadUnit.byteSize]u8, @ptrCast(dst))[offset .. src.len + offset], src);
-        if (comptime end) {
-            std.mem.byteSwapAllFields(SettingsPayloadUnit, dst);
-        }
-    }
-};
+comptime {
+    std.debug.assert((FrameHeader{}).type == @intFromEnum(FrameType.HTTP_FRAME_SETTINGS));
+}
 
 const FullSettingsPayload = packed struct(u336) {
     _headerTableSizeType: u16 = @intFromEnum(SettingsType.SETTINGS_HEADER_TABLE_SIZE),
@@ -239,11 +197,28 @@ const FullSettingsPayload = packed struct(u336) {
             else => {},
         }
     }
-    pub fn write(this: *FullSettingsPayload, comptime Writer: type, writer: Writer) bool {
-        var swap = this.*;
+    /// Seven SETTINGS parameters, each Identifier(16) | Value(32) big-endian, in
+    /// field order (RFC 9113 §6.5.1).
+    pub fn encode(this: *const FullSettingsPayload, dst: *[byteSize]u8) void {
+        const units = [_]SettingsPayloadUnit{
+            .{ .type = this._headerTableSizeType, .value = this.headerTableSize },
+            .{ .type = this._enablePushType, .value = this.enablePush },
+            .{ .type = this._maxConcurrentStreamsType, .value = this.maxConcurrentStreams },
+            .{ .type = this._initialWindowSizeType, .value = this.initialWindowSize },
+            .{ .type = this._maxFrameSizeType, .value = this.maxFrameSize },
+            .{ .type = this._maxHeaderListSizeType, .value = this.maxHeaderListSize },
+            .{ .type = this._enableConnectProtocolType, .value = this.enableConnectProtocol },
+        };
+        comptime std.debug.assert(units.len * SettingsPayloadUnit.byteSize == byteSize);
+        for (units, 0..) |unit, i| {
+            unit.encode(dst[i * SettingsPayloadUnit.byteSize ..][0..SettingsPayloadUnit.byteSize]);
+        }
+    }
 
-        std.mem.byteSwapAllFields(FullSettingsPayload, &swap);
-        return (writer.write(std.mem.asBytes(&swap)[0..FullSettingsPayload.byteSize]) catch 0) != 0;
+    pub fn write(this: *const FullSettingsPayload, comptime Writer: type, writer: Writer) bool {
+        var bytes: [byteSize]u8 = undefined;
+        this.encode(&bytes);
+        return (writer.write(&bytes) catch 0) != 0;
     }
 };
 
@@ -323,8 +298,7 @@ pub fn jsGetUnpackedSettings(globalObject: *jsc.JSGlobalObject, callframe: *jsc.
         var i: usize = 0;
         while (i < payload.len) {
             defer i += settingByteSize;
-            var unit: SettingsPayloadUnit = undefined;
-            SettingsPayloadUnit.from(&unit, payload[i .. i + settingByteSize], 0, true);
+            const unit = SettingsPayloadUnit.decode(payload[i..][0..settingByteSize]);
             settings.updateWith(unit);
         }
         return settings.toJS(globalObject);
@@ -514,10 +488,10 @@ pub fn jsGetPackedSettings(globalObject: *jsc.JSGlobalObject, callframe: *jsc.Ca
         }
     }
 
-    std.mem.byteSwapAllFields(FullSettingsPayload, &settings);
-    const bytes = std.mem.asBytes(&settings)[0..FullSettingsPayload.byteSize];
+    var bytes: [FullSettingsPayload.byteSize]u8 = undefined;
+    settings.encode(&bytes);
     const binary_type: BinaryType = .Buffer;
-    return binary_type.toJS(bytes, globalObject);
+    return binary_type.toJS(&bytes, globalObject);
 }
 
 const Handlers = struct {
@@ -2303,8 +2277,7 @@ pub const H2FrameParser = struct {
         if (handleIncommingPayload(this, data, frame.streamIdentifier)) |content| {
             const payload = content.data;
 
-            var priority: StreamPriority = undefined;
-            priority.from(payload);
+            const priority = StreamPriority.decode(payload[0..StreamPriority.byteSize]);
             this.readBuffer.reset();
 
             const stream_identifier = UInt31WithReserved.from(priority.streamIdentifier);
@@ -2533,8 +2506,7 @@ pub const H2FrameParser = struct {
             const payload = content.data;
             while (i < payload.len) {
                 defer i += settingByteSize;
-                var unit: SettingsPayloadUnit = undefined;
-                SettingsPayloadUnit.from(&unit, payload[i .. i + settingByteSize], 0, true);
+                const unit = SettingsPayloadUnit.decode(payload[i..][0..settingByteSize]);
                 remoteSettings.updateWith(unit);
                 log("remoteSettings: {} {} isServer: {}", .{ @as(SettingsType, @enumFromInt(unit.type)), unit.value, this.isServer });
             }
@@ -2643,7 +2615,7 @@ pub const H2FrameParser = struct {
 
         const buffered_data = this.readBuffer.list.items.len;
 
-        var header: FrameHeader = .{ .flags = 0 };
+        var header: FrameHeader = undefined;
         // we can have less than 9 bytes buffered
         if (buffered_data > 0) {
             const total = buffered_data + bytes.len;
@@ -2654,12 +2626,13 @@ pub const H2FrameParser = struct {
 
                 return bytes.len;
             }
-            FrameHeader.from(&header, this.readBuffer.list.items[0..buffered_data], 0, false);
+            // Assemble the 9 header bytes from the buffered prefix and the new data,
+            // then decode (big-endian per field, reserved bit cleared).
+            var raw: [FrameHeader.byteSize]u8 = undefined;
+            @memcpy(raw[0..buffered_data], this.readBuffer.list.items[0..buffered_data]);
             const needed = FrameHeader.byteSize - buffered_data;
-            FrameHeader.from(&header, bytes[0..needed], buffered_data, true);
-            // ignore the reserved bit
-            const id = UInt31WithReserved.from(header.streamIdentifier);
-            header.streamIdentifier = @intCast(id.uint31);
+            @memcpy(raw[buffered_data..], bytes[0..needed]);
+            header = FrameHeader.decode(&raw);
             // reset for later use
             this.readBuffer.reset();
 
@@ -2695,7 +2668,7 @@ pub const H2FrameParser = struct {
             return bytes.len;
         }
 
-        FrameHeader.from(&header, bytes[0..FrameHeader.byteSize], 0, true);
+        header = FrameHeader.decode(bytes[0..FrameHeader.byteSize]);
 
         log("new frame {s} {} {} {} {}", .{ if (this.isServer) "server" else "client", header.type, header.length, header.flags, header.streamIdentifier });
         this.currentFrame = header;
@@ -4859,6 +4832,7 @@ pub const H2FrameParser = struct {
 
 extern fn Bun__wrapAbortError(globalObject: *jsc.JSGlobalObject, cause: jsc.JSValue) jsc.JSValue;
 
+const h2_wire = @import("../../../http/h2_wire.zig");
 const lshpack = @import("../../../http/lshpack.zig");
 const std = @import("std");
 const Allocator = std.mem.Allocator;

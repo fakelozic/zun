@@ -154,3 +154,9 @@ implementations use it (`src/http/h2_client/ClientSession.zig`, `src/http/H2Fram
 `src/runtime/api/bun/h2_frame_parser.zig` for node:http2). zun talking to zun is symmetric, so the bug stays hidden;
 it only shows against a real peer (Node, a browser, nginx).
 
+
+**Follow-up (H2C-1 fix):** a packed struct's **first field is bit 0**, so `@bitCast` of
+`packed struct(u32) { reserved: bool, uint31: u31 }` puts the flag at bit 0, not at bit 31 where HTTP/2's E/R bit
+lives (probe test "packed bitCast: first field is bit 0" in `probes/byteswap-packed/byteswap.zig`). The HTTP/2 wire
+structs now live in `src/http/h2_wire.zig` and have explicit `decode`/`encode` plus RFC byte tests
+(`zig test src/http/h2_wire.zig`).

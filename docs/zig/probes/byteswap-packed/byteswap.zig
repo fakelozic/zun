@@ -24,3 +24,15 @@ test "per-field big-endian writes give the wire order" {
     std.mem.writeInt(u32, buf[5..9], 0, .big);
     try std.testing.expectEqualSlices(u8, &.{ 0, 0, 0x12, 4, 0, 0, 0, 0, 0 }, &buf);
 }
+
+// H2C-1 sibling: the first field of a packed struct is the LEAST significant bit, so a
+// `packed struct(u32) { reserved: bool, uint31: u31 }` bitcast to u32 puts the flag at bit 0,
+// not bit 31 where HTTP/2's E/R bit lives (Bun 1.3.14's UInt31WithReserved.toUInt32 did this).
+const UInt31WithReserved = packed struct(u32) { reserved: bool = false, uint31: u31 = 0 };
+
+test "packed bitCast: first field is bit 0" {
+    const v: UInt31WithReserved = .{ .reserved = true, .uint31 = 5 };
+    try std.testing.expectEqual(@as(u32, (5 << 1) | 1), @as(u32, @bitCast(v)));
+    // What the wire wants (RFC 9113 §5.3.1): E at bit 31.
+    try std.testing.expectEqual(@as(u32, 0x80000005), @as(u32, v.uint31) | (@as(u32, @intFromBool(v.reserved)) << 31));
+}
