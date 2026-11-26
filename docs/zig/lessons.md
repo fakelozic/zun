@@ -3,6 +3,14 @@
 Things we learned the hard way while working on zun. Add newest first, with a date.
 Keep each entry short: what happened, why, what to do instead.
 
+## 2026-11-26: `Writer.Allocating.init` starts with no buffer
+
+`std.compress.flate.Compress.init` asserts its output writer has a buffer of more than
+8 bytes, so passing `&aw.writer` from `Writer.Allocating.init(gpa)` aborted the test
+with "reached unreachable code". **Do:** use `try .initCapacity(gpa, n)` when a consumer
+writes into the writer's buffer directly. Also: `"str" ** n` no longer parses at all in
+0.17 (the `**` operator is gone, the error talks about whitespace around `*`).
+
 ## 2026-11-26: memory of Zig is out of date; probe first
 
 Assuming `@typeInfo(T).@"struct".fields` still worked (it's been the API for years)
