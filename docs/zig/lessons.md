@@ -3,6 +3,27 @@
 Things we learned the hard way while working on zun. Add newest first, with a date.
 Keep each entry short: what happened, why, what to do instead.
 
+## 2026-11-26: Phase 2 port to 0.17: what the compiler did and didn't tell us
+
+- **Parse errors come first, and stop everything.** The first `zig build obj` on 0.17 reported only `**`
+  syntax errors (37 files) and nothing else: the semantic errors only showed up once the codemod had removed
+  every `**`. Fix syntax-level changes in bulk before reading semantic errors.
+- **Errors arrive in waves.** Zig analyses lazily, so fixing one layer exposes the next (65 → 41 → 8 → 7 → 0 unique
+  errors). Deduplicate with `rg "^\S+:\d+:\d+: error: " log | sort -u`: 720 reported errors were 65 real ones.
+- **A codemod must know about files outside the module.** `src/unicode/uucode_lib` is std-only and not part of
+  `bun`, so rewriting it to `bun.meta.*` would have broken it. The codemod now skips bun-helper rewrites in files
+  without `@import("bun")`. (That directory turned out not to compile on 0.16 either: it still uses `@Type`.)
+- **`x ** if (c) a else b` is valid old Zig.** The right operand of `**` can be an `if` expression. The first
+  codemod version treated `if` as an identifier and produced garbage; it now refuses keywords.
+- **Read the old semantics precisely before auditing.** "`@hasDecl` now sees only pub decls" sounded like 57
+  suspicious calls. The exact 0.16 rule ("pub, or non-pub *in the same file as the call*") cut it to 10, all fine.
+- **0.17.1's configure cache ignores `--build-file`.** With one `--cache-dir`, `zig build --build-file other.zig -l`
+  printed `build.zig`'s steps. Probe: `probes/build-file-cache/run.sh`. **Do:** one cache dir per build file.
+- **`inline fn` vs comptime-only results.** A helper returning `[]const StructField` (which holds `type`) must be
+  `inline` with a `comptime` body, or callers get "pointer is runtime-known". Probe in `migration-017.zig`.
+- **`@typeInfo(E).error_set.error_names` is not in declaration order.** A probe that indexed `[1]` failed. Search by name.
+- **`zig test file.zig` writes `.zig-cache/` into the current directory.** It's gitignored here; run probes from the repo root.
+
 ## 2026-11-26: `Writer.Allocating.init` starts with no buffer
 
 `std.compress.flate.Compress.init` asserts its output writer has a buffer of more than

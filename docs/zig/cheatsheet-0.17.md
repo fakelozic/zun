@@ -1,7 +1,8 @@
 # Zig 0.17 cheatsheet (verified)
 
 Every claim below is backed by a probe that compiles and passes on **zig 0.17.1**
-(2026-11-26): `probes/basics.zig`, `probes/std-0.17.zig`, `probes/reflection-io.zig`, `probes/native-deps.zig` and `probes/hello.zig`.
+(2026-11-26): `probes/basics.zig`, `probes/std-0.17.zig`, `probes/reflection-io.zig`, `probes/native-deps.zig`, `probes/hello.zig`,
+`probes/migration-017.zig` and `probes/build-file-cache/run.sh`.
 The build.zig skeleton comes from `zig init`. **When you add a line here, add its probe in the same change.**
 
 ## Entry point ("Juicy Main")
@@ -99,12 +100,16 @@ var an: std.array_hash_map.Auto(u32, u8) = .empty; // AutoArrayHashMapUnmanaged 
 ```
 - Bit sets were renamed: `std.bit_set.Integer(n)`, `.Static(n)`, `.Array(MaskInt, n)` start from `.empty` / `.full`.
   **Exception:** `std.bit_set.Dynamic` allocates, so it still uses `try .initEmpty(gpa, n)` / `.initFull(gpa, n)` and `deinit(gpa)`.
-- `std.enums.EnumSet(E)` also uses `.empty`.
+- `std.enums.EnumSet(E)` also uses `.empty` / `.full` (`initEmpty()`/`initFull()` are gone; same for `bit_set.Integer`/`Array`).
+- `std.ArrayList` has a field `pointer_stability: debug.SafetyLock` with **no default**. A struct literal must set it:
+  `.{ .items = &.{}, .capacity = 0, .pointer_stability = .{} }`. Prefer `.empty` / `initCapacity` / `fromOwnedSlice`.
 
 ## Allocators
 
 - `std.testing.allocator` in tests fails the test if anything leaks.
 - `std.heap.ArenaAllocator` became thread-safe and lock-free in 0.16.
+- Gone in 0.17: `allocator.dupeZ` (use `dupeSentinel(u8, s, 0)`), `std.fmt.bufPrintZ` (use `bufPrintSentinel(buf, f, args, 0)`),
+  `std.meta.Int` (use `@Int(.unsigned, n)`).
 - `std.heap.BufferFirstAllocator` (0.17) replaces `StackFallbackAllocator` / `stackFallback`:
   ```zig
   var buf: [256]u8 = undefined;
@@ -140,6 +145,14 @@ std.mem.cutPrefix(u8, "foobar", "foo") // ?[]const u8 -> "bar"
   Enum has `field_names` and `field_values`. Fn has `param_types`, `param_attrs`, `attrs.@"callconv"` and `return_type`.
   Pointer has `size`, `child` and `attrs.{const,volatile,align,...}`.
 - `@hasDecl` is now true **only for `pub` declarations**, even inside the same file (0.17).
+- `@typeInfo(E).error_set` is `{ error_names: ?[]const [:0]const u8 }` (`null` for `anyerror`). The order is **not**
+  declaration order.
+- `std.meta.declarations(T)` returns `[]const [:0]const u8` (names), not `[]const Declaration`.
+- `@bitSizeOf` of an auto-layout struct is a compile error ("no bit size available"); use `@sizeOf(T) * 8` if
+  that's what you meant. Ints, packed structs and arrays of them are fine.
+- A **non-`inline`** function that returns a slice of structs containing `type` gives a *runtime-known* pointer
+  at the call site, so `fs[0].type` fails ("cannot load comptime-only type"). Call it with `comptime`, or make it
+  `inline fn` with a `comptime` block body. (Same on 0.16.)
 - `std.meta.fieldNames` / `fieldInfo` are deprecated. **`std.meta.fields` and `std.meta.declarationInfo` are already
   `@compileError`**, so using them is a compile error. Use `@typeInfo`.
 
@@ -161,7 +174,15 @@ New in 0.17: `@divCeil`, `@backingInt` / `@fromBackingInt` (packed types ↔ bac
 ⚠️ **`@bitCast` semantics changed in 0.17.** Arrays and vectors are reinterpreted by
 *logical* bits, and `extern struct` / `extern union` casts are rejected. Some
 changes don't produce a compile error. For type punning an extern struct, use
-`@ptrCast` to an `*align(1) const T`.
+`@ptrCast` to an `*align(1) const T`, or copy bytes:
+`std.mem.bytesToValue(To, &std.mem.toBytes(value))` (works at comptime; zun wraps it as `bun.memCast`).
+On little-endian, `[N]u8` ↔ int and `@Vector(N, bool)` → `@Vector(N, u1)` → int give the same result as before.
+
+## Linux (`std.os.linux`)
+
+- x86_64's `fstatat` syscall is `SYS.newfstatat` (the kernel name); `fstatat64` no longer exists there.
+  Portable: `if (@hasField(std.os.linux.SYS, "fstatat64")) .fstatat64 else .newfstatat`.
+- `std.os.linux.wait4(pid, status: *i32, flags, usage)` takes `*i32`.
 
 ## Compression, archives, password hashing (`probes/native-deps.zig`)
 
@@ -224,6 +245,13 @@ pub fn build(b: *std.Build) void {
     b.step("test", "Run tests").dependOn(&b.addRunArtifact(tests).step);
 }
 ```
+- `zig build` flags: no `--global-cache-dir` (use env `ZIG_GLOBAL_CACHE_DIR`), no `--zig-lib-dir`
+  (`--zig-lib=PATH` exists but must be the first argument). `zig build -l` lists steps and fails fast on build-script errors.
+- Build API: `b.pathFromRoot(p)` → `b.root.joinString(b.allocator, p)`; `b.modules.put(gpa, k, v)` takes an allocator;
+  `b.option(std.lang.Optimize, …)` parses both `fast` and `ReleaseFast` (verified by zun's own `build.zig`,
+  `src/unicode/uucode_lib/build.zig` and `lib/std/Build.zig` on 0.17.1; the CLI flags by running `zig build`).
+- The **configure cache ignores `--build-file`**: two build files that share a `--cache-dir` see each other's
+  configuration. Give each its own `--cache-dir` (probe: `probes/build-file-cache/run.sh`, 0.17.1).
 - `build.zig.zon` has `.name = .identifier` (an enum literal), `.fingerprint`, and `.minimum_zig_version = "0.17.1"`.
 - C headers: add the `translate_c` package (`zig fetch --save git+https://codeberg.org/ziglang/translate-c#zig-0.17.x`).
   See `upstream/release-notes-0.17.0.md`, section "C Translation Moving to External Package".

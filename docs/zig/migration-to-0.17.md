@@ -1,8 +1,55 @@
 # Migrating code to Zig 0.17
 
 Bun 1.3.14 was built with Oven's patched Zig (commit `04e7f6ac`, 0.14/0.15 era).
-Cruller ported it to vanilla **0.16**. Its last two commits ("zig 17") only touch build files
-(root `build.zig` and `src/unicode/uucode_lib/build.zig`), so the **0.16 → 0.17 port has not really started**.
+Cruller ported it to vanilla **0.16**. **Zun is on 0.17.1 since Phase 2** (2026-11-26): status, audit and a
+"what changed and why" walkthrough are in `docs/status/zig-017.md`.
+
+## The codemod: `scripts/fix_zig017.ts`
+
+Every mechanical 0.16 → 0.17 rewrite used in the port lives in one script, so code restored from Bun 1.3.14
+goes through the same steps. Order for restored code:
+
+1. cruller's `scripts/fix_zig016_*.py` (0.15 → 0.16), then
+2. `bun scripts/fix_zig017.ts <paths>` (0.16 → 0.17), then
+3. `bun scripts/fix_zig017.ts --report <paths>` and `bun scripts/zig017_audit_hasdecl.ts <paths>`, then
+4. compile and fix the rest by hand (the list below says what to expect).
+
+```sh
+bun scripts/fix_zig017.ts src/cli              # rewrite in place, prints counts per rule
+bun scripts/fix_zig017.ts --check src          # exit 1 if anything would change (idempotency / CI)
+bun scripts/fix_zig017.ts --report src         # also list sites that need a human
+bun scripts/fix_zig017.ts --only=array-mul,void-init src/foo.zig
+bun test ./scripts/fix_zig017.test.ts          # the codemod's own tests
+```
+
+It masks comments, strings and `\\` lines, so it only rewrites code, and a second run changes nothing.
+
+| Rule | Rewrite |
+|------|---------|
+| `array-mul` | `[_]T{x} ** n` → `@splat(x)` when the declaration has a type, else `@as([n]T, @splat(x))`; `.{x} ** n` → `@splat(x)`; `"s" ** n` → `bun.strings.repeatComptime("s", n)`. Multi-element arrays and `x ** if (…)` are left (reported) |
+| `void-init` | `void{}` → `{}` |
+| `stack-fallback` | `std.heap.stackFallback(` / `StackFallbackAllocator(` → `bun.allocators.*` (0.16's implementation, same fields) |
+| `alloc-print` | `std.fmt.allocPrint(a, f, x)` → `a.print(f, x)`, `allocPrintSentinel` → `a.printSentinel` |
+| `dupe-z` | `a.dupeZ(T, s)` → `a.dupeSentinel(T, s, 0)` |
+| `buf-print-z` | `std.fmt.bufPrintZ(b, f, x)` → `std.fmt.bufPrintSentinel(b, f, x, 0)` |
+| `meta-int` | `std.meta.Int(s, n)` → `@Int(s, n)` |
+| `builtin-target` | `builtin.os/cpu/abi/object_format` → `builtin.target.os/cpu/abi/ofmt` |
+| `optimize-mode`, `optimize-type` | `mode == .Debug` → `.debug`, `OptimizeMode.ReleaseSafe` → `std.lang.Optimize.safe`, type → `std.lang.Optimize` |
+| `type-renames` | `std.builtin.Type.StructField/UnionField/EnumField/Declaration/Fn.Param` → `bun.meta.*`; `StructField.Attributes` → `Type.Struct.FieldAttributes` (same for Union, Fn.ParamAttributes) |
+| `std-builtin` | `std.builtin.` → `std.lang.` |
+| `bit-set` | `IntegerBitSet` → `bit_set.Integer`, `StaticBitSet` → `Static`, `DynamicBitSetUnmanaged` → `Dynamic`, … |
+| `reflection` | `X.@"struct"/"union"/"enum".fields` → `bun.meta.fieldsOf(X.@"…")`; `.decls` → `bun.meta.declsOf`; `.@"fn".params` → `bun.meta.paramsOf`; `std.meta.fields(T)` → `bun.meta.fieldsOf(T)`; `std.meta.declarations` → `bun.meta.declsOf`; `.@"fn".is_var_args/calling_convention` → `.attrs.varargs/.attrs.@"callconv"`; `.pointer.is_const/is_volatile/is_allowzero/address_space/alignment` → `.attrs.@"…"` |
+
+The `bun.*` helpers keep the 0.16 *shape* (array of `{name, type, …}`) so call sites need no restructuring.
+In files that don't import `bun` (std-only tools, files with standalone tests) those rewrites are skipped and
+`--report` lists them as `needs-bun`: port those by hand to the struct-of-arrays API.
+
+**Still manual** (the compiler reports all of these; see `docs/status/zig-017.md` for examples):
+reflection through a variable (`const info = @typeInfo(T).@"struct"; info.fields`), `std.ArrayList` struct
+literals (add `.pointer_stability = .{}`), `@bitCast` on extern structs/unions (`bun.memCast`),
+`EnumSet`/`bit_set.Integer` `initEmpty()/initFull()` → `.empty/.full`, `ErrorSet` → `error_names`,
+x86_64 `fstatat64` → `bun.sys.fstatat_syscall`, `linux.wait4(*i32)`, `@bitSizeOf` on auto-layout structs,
+`errdefer |err|`. Then audit `@hasDecl` and `@bitCast` (silent changes).
 
 Sources: `upstream/release-notes-0.15.1.md`, `-0.16.0.md`, `-0.17.0.md`. Read the
 named section before migrating a pattern.

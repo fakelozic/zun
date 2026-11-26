@@ -49,7 +49,11 @@ Details: `docs/build.md`, `docs/status/baseline.md`.
 4. Write down the build steps that worked in `docs/build.md`.
 - **Checkpoint:** a green 0.16 baseline, and we understand the build pipeline (codegen → zig obj → C++ → link).
 
-## Phase 2: Zig 0.17 port
+## Phase 2: Zig 0.17 port (done, awaiting checkpoint review, 2026-11-26)
+
+Done: static-import crash fixed and QuickJS/V8 dropped on 0.16 first (Part A); then build files, codemod
+(`scripts/fix_zig017.ts`, idempotent, tested), hand fixes and the `@hasDecl`/`@bitCast` audit (no silent changes found).
+Zig 0.17.1 debug build green, 6/6 tests pass. Details: `docs/status/zig-017.md`. Open: `translate_c` package, 0.18 deprecations.
 
 Follow `docs/zig/migration-to-0.17.md`: build files first, then compile errors from the
 leaves upward, then deprecations, then a hand audit of `@bitCast` / `@hasDecl`.

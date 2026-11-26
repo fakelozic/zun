@@ -1,13 +1,14 @@
 # Building zun
 
-What actually worked on the dev machine on 2026-11-26 (Phase 1 baseline, **Zig 0.16**).
-For results, see `docs/status/baseline.md`.
+What actually worked on the dev machine on 2026-11-26. Since Phase 2 the tree builds with **Zig 0.17.1**
+(the global `zig`), and no longer with 0.16. Results: `docs/status/zig-017.md` (0.17) and
+`docs/status/baseline.md` (the 0.16 baseline, kept for history).
 
 ## TL;DR
 
 ```sh
 # one-time toolchain setup (all project-local, no sudo, nothing global changed)
-mise install zig@0.16.0                         # does NOT change the global default (0.17.1)
+# Zig 0.17.1 is the machine's global default (mise); nothing to install for Zig.
 mkdir -p vendor/llvm-dl vendor/llvm-21.1.8
 curl -L -o vendor/llvm-dl/LLVM-21.1.8-Linux-X64.tar.xz \
   https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.8/LLVM-21.1.8-Linux-X64.tar.xz
@@ -20,7 +21,7 @@ mkdir -p vendor/perl5-dl && cd vendor/perl5-dl && \
 
 # every build
 export PATH=$PWD/vendor/llvm-21.1.8/bin:$PATH        # clang/lld/llvm-ar 21.1.8 (+ llvm-symbolizer for ASAN)
-export BUN_ZIG_PATH=$(mise where zig@0.16.0)          # vanilla Zig 0.16 instead of oven-sh/zig
+export BUN_ZIG_PATH=$(mise where zig@0.17.1)          # vanilla Zig 0.17.1 instead of oven-sh/zig
 export PERL5LIB=$PWD/vendor/perl5                     # `use bigint` for src/codegen/create_hash_table
 export BUN_INSTALL_CACHE_DIR=$PWD/build/cache/bun-install   # keep `bun install` out of ~/.bun
 bun scripts/build.ts --profile=debug --cache-dir=build/cache
@@ -35,7 +36,7 @@ the real Bun's directory.
 
 | Tool | Version used | Where from | Why |
 |------|--------------|------------|-----|
-| Zig | **0.16.0** | `mise install zig@0.16.0`, passed via `BUN_ZIG_PATH` | cruller targets vanilla 0.16. Without `BUN_ZIG_PATH` the build downloads Oven's patched Zig (`ZIG_COMMIT` in `scripts/build/zig.ts`), which is wrong for this tree |
+| Zig | **0.17.1** (0.16.0 until Phase 2) | global mise install, passed via `BUN_ZIG_PATH` | zun targets vanilla 0.17. Without `BUN_ZIG_PATH` the build downloads Oven's patched Zig (`ZIG_COMMIT` in `scripts/build/zig.ts`), which is wrong for this tree. Zig 0.17.1 bundles LLVM 22; the Zig object links fine with lld 21 (non-LTO) |
 | LLVM / clang / lld | **21.1.8** | official LLVM release tarball in `vendor/llvm-21.1.8` (11 GB unpacked, 2 GB download) | `scripts/build/tools.ts` requires clang `>=21.1.0 <21.1.99`. Fedora 45 ships clang 23; its `clang21`/`lld21`/`llvm21` packages would work too but need sudo |
 | Perl `bigint` pragma | bignum 0.67 (pure Perl) | CPAN tarball in `vendor/perl5` | `src/codegen/create_hash_table` does `use bigint`. Fedora package `perl-bigint` (sudo) is the alternative. Math::BigInt 2.005 itself is already installed |
 | bun | 1.4.5 (`~/.bun/bin/bun`, the owner's install, used read-only) | existing | runs `scripts/build.ts` and ~20 codegen scripts, `bun install` for codegen deps |
@@ -60,6 +61,20 @@ the real Bun's directory.
 6. **cargo** builds lol-html.
 7. **Link** with lld → `build/debug/bun-debug`, then a smoke edge runs `bun-debug --revision`.
 
+## Zig 0.17 notes
+
+- `zig build` in 0.17 has no `--global-cache-dir` or `--zig-lib-dir`. `scripts/build/zig.ts` relies on
+  `ZIG_GLOBAL_CACHE_DIR` (set by the ninja rule) and the stdlib next to the compiler.
+- `-Doptimize` uses 0.17's names (`debug`, `safe`, `fast`, `small`); the old `Debug`/`ReleaseFast` still parse.
+- `build.zig` still uses `b.addTranslateC` (deprecated in 0.17, not removed). The `translate_c` package is an open item.
+- **Configure cache ignores `--build-file`.** `zig build --build-file build016.zig check` with the same
+  `--cache-dir` as `build.zig` reuses `build.zig`'s configuration (wrong steps). Give each build file its own
+  `--cache-dir`. Probe: `docs/zig/probes/build-file-cache/run.sh`.
+- Codemod for code restored from 1.3.14: `docs/zig/migration-to-0.17.md`.
+- Fast iteration on Zig errors: run the `zig build obj …` command from `build/debug/build.ninja` (the `args`
+  line of the `bun-zig.o` edge) by hand with a fixed `-Dsha`, so commits don't force a full re-analysis, and add
+  `--error-style minimal -freference-trace=4`.
+
 ## Measurements (12 cores, 15 GB RAM, NVMe)
 
 | What | Result |
@@ -68,6 +83,8 @@ the real Bun's directory.
 | …of which `zig build obj` → `bun-zig.o` | 169 s (the critical path) |
 | …WebKit prebuilt download + extract | 67 s (in parallel) |
 | Rebuild after only a new git commit | 70 s (see the `-Dsha` gotcha below) |
+| **Zig 0.17.1:** `zig build obj` after a new `-Dsha` (full re-analysis) | 67 s wall, 4.5 GB peak RSS |
+| **Zig 0.17.1:** full debug build in a fresh build dir (deps fetched, ccache warm) | 2 min 06 s |
 | `build/debug/bun-debug` | 737 MB (debug info + ASAN, not stripped) |
 | `build/` total | 5.8 GB (`build/debug` 2.5 GB, `build/cache` 3.2 GB: WebKit 1.9 GB, ccache 1.3 GB) |
 | `vendor/` | 11.4 GB (LLVM 11 GB, fetched dep sources 366 MB) |
@@ -93,8 +110,8 @@ the real Bun's directory.
   `ASAN_SYMBOLIZER_PATH=$PWD/vendor/llvm-21.1.8/bin/llvm-symbolizer`) fixes it.
 - **Debug binary prints `[sys]`/`[fs]` logs.** Set `BUN_DEBUG_QUIET_LOGS=1` when running it by hand.
 - `zig build --build-file build016.zig check` (from `problem.md`) shells out to
-  `bun scripts/build.ts --build-dir=build --target=codegen` **without** `--cache-dir`, so it would use
-  `~/.bun/build-cache`. Not run in Phase 1.
+  `bun scripts/build.ts --build-dir=build --target=codegen`. Until Phase 2 that ran **without** `--cache-dir`
+  (so it would have used `~/.bun/build-cache`); it now passes `--cache-dir=build/cache`. Not run yet.
 
 ## Running tests
 
