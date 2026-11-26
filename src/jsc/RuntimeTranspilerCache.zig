@@ -449,19 +449,20 @@ pub const RuntimeTranspilerCache = struct {
         }
 
         if (bun.env_var.XDG_CACHE_HOME.get()) |dir| {
-            const parts = &[_][]const u8{ dir, "bun", "@t@" };
+            // zun: `$XDG_CACHE_HOME/zun/@t@` (Bun: `.../bun/@t@`). docs/identity.md
+            const parts = &[_][]const u8{ dir, bun.zun.identity.cache_dir_name, "@t@" };
             return bun.fs.FileSystem.instance.absBufZ(parts, buf);
         }
 
         if (comptime bun.Environment.isMac) {
-            // On a mac, default to ~/Library/Caches/bun/*
-            // This is different than ~/.bun/install/cache, and not configurable by the user.
+            // On a mac, default to ~/Library/Caches/zun/*
+            // This is different than ~/.zun/install/cache, and not configurable by the user.
             if (bun.env_var.HOME.get()) |home| {
                 const parts = &[_][]const u8{
                     home,
                     "Library/",
                     "Caches/",
-                    "bun",
+                    bun.zun.identity.cache_dir_name,
                     "@t@",
                 };
                 return bun.fs.FileSystem.instance.absBufZ(parts, buf);
@@ -469,12 +470,13 @@ pub const RuntimeTranspilerCache = struct {
         }
 
         if (bun.env_var.HOME.get()) |dir| {
-            const parts = &[_][]const u8{ dir, ".bun", "install", "cache", "@t@" };
+            // zun: `~/.zun/install/cache/@t@` (Bun: `~/.bun/...`). docs/identity.md
+            const parts = &[_][]const u8{ dir, bun.zun.identity.home_dir_name, "install", "cache", "@t@" };
             return bun.fs.FileSystem.instance.absBufZ(parts, buf);
         }
 
         {
-            const parts = &[_][]const u8{ bun.fs.FileSystem.RealFS.tmpdirPath(), "bun", "@t@" };
+            const parts = &[_][]const u8{ bun.fs.FileSystem.RealFS.tmpdirPath(), bun.zun.identity.cache_dir_name, "@t@" };
             return bun.fs.FileSystem.instance.absBufZ(parts, buf);
         }
     }
@@ -603,9 +605,12 @@ pub const RuntimeTranspilerCache = struct {
 
         const cache_dir_fd = brk: {
             if (std.fs.path.dirname(cache_file_path)) |dirname| {
-                var dir = std.Io.Dir.cwd().openDir(bun.compat.io(), dirname, .{ .access_sub_paths = true }) catch {
-                    break :brk bun.FD.cwd();
-                };
+                // Upstream 1.3.14 used `makeOpenPath`. The port's `openDir` + fallback to the cwd
+                // wrote `.pile` cache files into the user's project whenever the cache dir did not
+                // exist yet (always, on first use). Create it; if that fails, skip caching.
+                bun.FD.cwd().makePath(u8, dirname) catch return error.CacheDirUnavailable;
+                var dir = std.Io.Dir.cwd().openDir(bun.compat.io(), dirname, .{ .access_sub_paths = true }) catch
+                    return error.CacheDirUnavailable;
                 errdefer dir.close();
                 break :brk try bun.FD.fromStdDir(dir).makeLibUVOwned();
             }

@@ -554,6 +554,8 @@ pub fn runEntryFile(allocator: std.mem.Allocator, entry_path: [:0]const u8) !voi
     };
     const absolute_entry_path = try allocator.dupeSentinel(u8, bun.path.joinAbsString(cwd, &.{entry_path}, .auto), 0);
 
+    const config_path = try findLaunchConfig(allocator, cwd);
+
     const log = try allocator.create(logger.Log);
     log.* = logger.Log.init(allocator);
 
@@ -571,11 +573,22 @@ pub fn runEntryFile(allocator: std.mem.Allocator, entry_path: [:0]const u8) !voi
             .extension_order = &.{},
             .conditions = &.{},
             .ignore_dce_annotations = false,
-            .bunfig_path = "",
+            .bunfig_path = config_path,
         },
     };
 
     try Run.boot(ctx, absolute_entry_path, null);
+}
+
+/// zun: the config lookup rule (`zunfig.toml`, else `bunfig.toml`, in the cwd) runs
+/// at launch so the restored CLI inherits it. Parsing (`cli/bunfig.zig`) is still cut,
+/// so the path is only recorded in `bunfig_path`, as Bun did. See docs/identity.md.
+/// `ZUN_DEBUG_ZUN=1` (debug builds) logs the file that was found.
+fn findLaunchConfig(allocator: std.mem.Allocator, cwd: []const u8) ![]const u8 {
+    var config_buf: bun.PathBuffer = undefined;
+    const found = bun.zun.findLocalConfig(cwd, &config_buf) orelse return "";
+    zun_log("config file found (not parsed yet): {s}", .{found});
+    return try allocator.dupe(u8, found);
 }
 
 /// Run host-provided source bytes. The synthetic entry name selects Bun's
@@ -598,6 +611,12 @@ pub fn runSourceWithHook(
     const base_dir = std.fs.path.dirname(filename) orelse ".";
     const entry_path = try allocator.print("{s}{s}", .{ base_dir, trigger });
 
+    var cwd_buf: bun.PathBuffer = undefined;
+    const config_path: []const u8 = switch (bun.sys.getcwd(&cwd_buf)) {
+        .result => |cwd| try findLaunchConfig(allocator, cwd),
+        .err => "",
+    };
+
     const log = try allocator.create(logger.Log);
     log.* = logger.Log.init(allocator);
     const ctx = try allocator.create(Command.ContextData);
@@ -614,7 +633,7 @@ pub fn runSourceWithHook(
             .extension_order = &.{},
             .conditions = &.{},
             .ignore_dce_annotations = false,
-            .bunfig_path = "",
+            .bunfig_path = config_path,
         },
         .runtime_options = .{ .eval = .{ .script = source } },
     };
@@ -653,6 +672,8 @@ pub noinline fn failWithBuildError(vm: *jsc.VirtualMachine) noreturn {
     dumpBuildError(vm);
     Global.exit(1);
 }
+
+const zun_log = bun.Output.scoped(.zun, .hidden);
 
 const OpaqueWrap = jsc.OpaqueWrap;
 const VirtualMachine = jsc.VirtualMachine;
