@@ -153,7 +153,10 @@ function prefixExprEnd(src: string, mask: Uint8Array, start: number): number {
   } else {
     if (src[i] === "@") i++;
     if (!isWord(src[i])) return -1;
+    const w0 = i;
     while (isWord(src[i])) i++;
+    // `x ** if (c) a else b` and friends: not a simple operand, leave it for a human
+    if (/^(if|switch|try|comptime|blk|while|for|orelse|catch)$/.test(src.slice(w0, i))) return -1;
   }
   for (;;) {
     if (src[i] === "(" || src[i] === "[") {

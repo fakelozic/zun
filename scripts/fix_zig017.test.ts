@@ -76,3 +76,8 @@ test("report finds @hasDecl, @bitCast, errdefer capture", () => {
   const src = 'if (@hasDecl(T, "x")) {}\nconst y: u32 = @bitCast(f);\nerrdefer |err| log(err);\n';
   expect(reportSource(src).map(r => r.rule)).toEqual(["has-decl", "bit-cast", "errdefer-capture"]);
 });
+
+test("`x ** if (...) a else b` is left for a human", () => {
+  const src = "    pad: [if (T == u32) 4 else 0]u8 = [_]u8{0} ** if (T == u32) 4 else 0,\n";
+  expect(fix(src)).toBe(src);
+});
