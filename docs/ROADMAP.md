@@ -83,7 +83,10 @@ Each step is accepted only when the Phase 1 smoke tests pass again.
 **Deliverable besides the green build:** a reusable `scripts/fix_zig017` codemod, so code restored from 1.3.14 can be run through `fix_zig016` + `fix_zig017`.
 - **Checkpoint:** a green baseline on 0.17. Fold everything we learned into `docs/zig/`.
 
-## Phase 3: Become zun
+## Phase 3: Become zun (implemented 2026-11-26, T3; awaiting checkpoint review)
+
+Done: `zun`/`zun-debug` binary, `zun --version` = `zun 0.1.0 (bun-compat 1.3.14)`, `process.versions.zun`, `ZUN_*`-first env,
+`~/.zun` dirs, `zunfig.toml` lookup (parser still cut), no crash upload or feedback to Oven; 7/7 tests. Details and deferred items: `docs/identity.md`.
 
 Rename the identity: binary `zun`, and its own install dir, cache dir, env-var prefix and config file,
 so nothing collides with the real Bun. The global API stays `Bun.*`, so existing code still runs.

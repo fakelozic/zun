@@ -3,6 +3,18 @@
 Things we learned the hard way while working on zun. Add newest first, with a date.
 Keep each entry short: what happened, why, what to do instead.
 
+## 2026-11-26: Phase 3 (become zun)
+
+- **`return` inside `comptime { }` fails in a runtime-called fn.** A helper that turned `"BUN_X"` into
+  `"ZUN_X"` with `comptime { return "ZUN_" ++ key[4..]; }` was rejected ("function called at runtime cannot
+  return value at comptime"). **Do:** `return comptime "ZUN_" ++ key[4..];`. Probe: `probes/comptime-return/`.
+- **Keep pure rules in a std-only file.** `src/bun_core/zun_identity.zig` doesn't import `bun`, so
+  `zig test src/bun_core/zun_identity.zig` runs its tests in about a second, without the 75 s build.
+  The `bun`-dependent wrappers live next to it in `zun.zig`.
+- **Dead code is not compiled.** Zig only analyses what is referenced, so a helper that nothing calls is never
+  type-checked (`probes/lazy-analysis.zig`: a type error in an unused fn still passes). `runEntryFile` in `src/bun.js.zig` looked like the launcher path but has no callers; the live
+  path is `runSourceWithHook` (from `src/rt/jsc_engine.zig`). Check with `grep` for callers before wiring code in.
+
 ## 2026-11-26: Phase 2 port to 0.17: what the compiler did and didn't tell us
 
 - **Parse errors come first, and stop everything.** The first `zig build obj` on 0.17 reported only `**`

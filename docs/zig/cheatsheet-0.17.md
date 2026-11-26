@@ -2,7 +2,7 @@
 
 Every claim below is backed by a probe that compiles and passes on **zig 0.17.1**
 (2026-11-26): `probes/basics.zig`, `probes/std-0.17.zig`, `probes/reflection-io.zig`, `probes/native-deps.zig`, `probes/hello.zig`,
-`probes/migration-017.zig` and `probes/build-file-cache/run.sh`.
+`probes/migration-017.zig`, `probes/build-file-cache/run.sh`, `probes/comptime-return/run.sh` and `probes/lazy-analysis.zig`.
 The build.zig skeleton comes from `zig init`. **When you add a line here, add its probe in the same change.**
 
 ## Entry point ("Juicy Main")
@@ -126,6 +126,7 @@ std.mem.findScalar(u8, hay, 'x')      // (was indexOfScalar)
 std.mem.cutScalar(u8, "k=v", '=')     // ?struct{ []const u8, []const u8 }  -> .{"k","v"}
 std.mem.cutPrefix(u8, "foobar", "foo") // ?[]const u8 -> "bar"
 ```
+- Trimming is `std.mem.trimStart` / `trimEnd` / `trim`; `trimLeft` / `trimRight` don't exist in 0.17.1.
 
 ## Comptime reflection (big 0.16/0.17 changes)
 
@@ -153,8 +154,14 @@ std.mem.cutPrefix(u8, "foobar", "foo") // ?[]const u8 -> "bar"
 - A **non-`inline`** function that returns a slice of structs containing `type` gives a *runtime-known* pointer
   at the call site, so `fs[0].type` fails ("cannot load comptime-only type"). Call it with `comptime`, or make it
   `inline fn` with a `comptime` block body. (Same on 0.16.)
+- To compute a comptime value (e.g. a string built with `++`) in a function that runtime code calls, write
+  `return comptime a ++ b;`. A `return` *inside* a `comptime { ... }` block is a compile error there:
+  "function called at runtime cannot return value at comptime" (`probes/comptime-return/run.sh`).
 - `std.meta.fieldNames` / `fieldInfo` are deprecated. **`std.meta.fields` and `std.meta.declarationInfo` are already
   `@compileError`**, so using them is a compile error. Use `@typeInfo`.
+
+- Zig analyses lazily: an unreferenced function is not type-checked at all, so errors in it go unnoticed
+  until something calls it (`probes/lazy-analysis.zig`).
 
 ## Syntax removed
 

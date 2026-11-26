@@ -25,12 +25,12 @@ export BUN_ZIG_PATH=$(mise where zig@0.17.1)          # vanilla Zig 0.17.1 inste
 export PERL5LIB=$PWD/vendor/perl5                     # `use bigint` for src/codegen/create_hash_table
 export BUN_INSTALL_CACHE_DIR=$PWD/build/cache/bun-install   # keep `bun install` out of ~/.bun
 bun scripts/build.ts --profile=debug --cache-dir=build/cache
-# → build/debug/bun-debug   (same as `bun run build:debug`, plus the --cache-dir override)
+# → build/debug/zun-debug   (same as `bun run build:debug`, plus the --cache-dir override)
 ```
 
 `vendor/` and `build/` are gitignored. Always pass `--cache-dir=build/cache`: without it the
-build cache defaults to `~/.bun/build-cache` (`scripts/build/config.ts`, `cacheDir`), which is
-the real Bun's directory.
+build cache defaults to `~/.zun/build-cache` (`$ZUN_INSTALL/build-cache`; `scripts/build/config.ts`,
+`cacheDir`). Before Phase 3 it defaulted to `~/.bun/build-cache`, the real Bun's directory.
 
 ## Toolchain
 
@@ -59,7 +59,9 @@ the real Bun's directory.
 4. **Zig**: one `zig build obj` (root `build.zig`, root module `src/main.zig`) → `build/debug/bun-zig.o`.
 5. **C/C++**: deps and `src/jsc/bindings/**` compiled with clang 21 (ASAN on in `debug`), via ccache.
 6. **cargo** builds lol-html.
-7. **Link** with lld → `build/debug/bun-debug`, then a smoke edge runs `bun-debug --revision`.
+7. **Link** with lld → `build/debug/zun-debug`, then a smoke edge runs `zun-debug --revision`
+   (prints e.g. `zun 0.1.0-debug+71ad28751 (bun-compat 1.3.14)`). Release builds produce `zun-profile` and a
+   stripped `zun`; the ninja phony target is `zun` (was `bun`). Internal artifacts keep Bun's names (`bun-zig.o`, `libbun-*.a`).
 
 ## Zig 0.17 notes
 
@@ -85,7 +87,7 @@ the real Bun's directory.
 | Rebuild after only a new git commit | 70 s (see the `-Dsha` gotcha below) |
 | **Zig 0.17.1:** `zig build obj` after a new `-Dsha` (full re-analysis) | 67 s wall, 4.5 GB peak RSS |
 | **Zig 0.17.1:** full debug build in a fresh build dir (deps fetched, ccache warm) | 2 min 06 s |
-| `build/debug/bun-debug` | 737 MB (debug info + ASAN, not stripped) |
+| `build/debug/zun-debug` (was `bun-debug` before Phase 3) | 737 MB (debug info + ASAN, not stripped) |
 | `build/` total | 5.8 GB (`build/debug` 2.5 GB, `build/cache` 3.2 GB: WebKit 1.9 GB, ccache 1.3 GB) |
 | `vendor/` | 11.4 GB (LLVM 11 GB, fetched dep sources 366 MB) |
 | `node_modules/` | 117 MB |
@@ -95,7 +97,7 @@ the real Bun's directory.
 - **cruller HEAD did not build on 0.16.** Its last two commits ("zig 17", `1874356`, `f7002b1`)
   had started moving `build.zig` and `src/unicode/uucode_lib/build.zig` to 0.17 APIs
   (`.fast`, `.debug`, `b.root.joinString`, `dupeSentinel`). `bootstrap` reverts them (`ee9f2f3`); Phase 2 redoes the port.
-- **`~/.bun` is the default for two caches.** The build cache (`--cache-dir` fixes it) and
+- **`~/.bun` was the default for two caches.** The build cache (now `~/.zun/build-cache`; `--cache-dir` still overrides) and
   `bun install`'s package cache (`BUN_INSTALL_CACHE_DIR` fixes it). The very first (failed) run
   here was started without `BUN_INSTALL_CACHE_DIR`, so `bun install` may have added packages to
   `~/.bun/install/cache` once. Harmless, but use the env var from now on.
@@ -117,9 +119,12 @@ the real Bun's directory.
 
 ```sh
 export PATH=$PWD/vendor/llvm-21.1.8/bin:$PATH   # for llvm-symbolizer (LSan suppressions)
-node scripts/runner.node.mjs --quiet --exec-path $PWD/build/debug/bun-debug \
+node scripts/runner.node.mjs --quiet --exec-path $PWD/build/debug/zun-debug \
   js/node/test/parallel/test-bzrt-runtime-smoke.js
 ```
+
+`--exec-path` defaults to `zun` on `PATH` (it was `bun`, which would have run the owner's real Bun).
+Old `build/debug/bun-debug` binaries from before Phase 3 are stale; delete them if you like.
 
 A passing test prints only its name and `End`; a failing one prints the output and a red status
 (`SIGABRT`, `fail`, …). The runner exits 1 on failure and 0 on success.
