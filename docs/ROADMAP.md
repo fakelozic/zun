@@ -72,7 +72,7 @@ tests set `BUN_*`); all default dirs under `~/.zun`, never `~/.bun`; no `Zun` JS
 
 The source for each feature is `bun-v1.3.14/src/<module>`. Every restored module is gated
 by upstream's own tests for it. **Hard rule: the test runner comes right after the CLI skeleton**, because every later
-restore is measured with it. Order, chosen so each step makes the next one testable:
+restore is measured with it. Each step makes the next one testable.
 
 Order (decided 2026-11-26, from `docs/plan/restore-1.3.14.md`):
 
