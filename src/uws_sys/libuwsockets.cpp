@@ -1450,6 +1450,8 @@ extern "C"
                           void (*handler)(uws_res_r res, void *optional_data),
                           void *optional_data)
   {
+    // Completion can close the socket and destroy its HTTP data before detach.
+    if (us_socket_is_closed((us_socket_t *)res)) return;
     if (ssl)
     {
       uWS::HttpResponse<true> *uwsRes = (uWS::HttpResponse<true> *)res;
@@ -1482,6 +1484,7 @@ extern "C"
                           void (*handler)(uws_res_r res, void *optional_data),
                           void *optional_data)
   {
+    if (us_socket_is_closed((us_socket_t *)res)) return;
     if (ssl)
     {
       uWS::HttpResponse<true> *uwsRes = (uWS::HttpResponse<true> *)res;
@@ -1516,6 +1519,7 @@ extern "C"
                                        void *optional_data),
                        void *optional_data)
   {
+    if (us_socket_is_closed((us_socket_t *)res)) return;
     if (ssl)
     {
       uWS::HttpResponse<true> *uwsRes = (uWS::HttpResponse<true> *)res;
@@ -1773,7 +1777,7 @@ __attribute__((callback (corker, ctx)))
     {
       uWS::HttpResponse<true> *uwsRes = (uWS::HttpResponse<true> *)res;
       auto pair = uwsRes->tryEnd(stringViewFromC(bytes, len), total_len, close);
-      if (pair.first) {
+      if (pair.first && !us_socket_is_closed((us_socket_t *)res)) {
         uwsRes->clearOnWritableAndAborted();
       }
 
@@ -1783,7 +1787,7 @@ __attribute__((callback (corker, ctx)))
     {
       uWS::HttpResponse<false> *uwsRes = (uWS::HttpResponse<false> *)res;
       auto pair = uwsRes->tryEnd(stringViewFromC(bytes, len), total_len, close);
-      if (pair.first) {
+      if (pair.first && !us_socket_is_closed((us_socket_t *)res)) {
           uwsRes->clearOnWritableAndAborted();
       }
 
