@@ -254,6 +254,8 @@ pub const bits = @import("./meta/bits.zig");
 // bzrt-cut: pub const SmallList = css.SmallList;
 pub const csrf = @import("./csrf/csrf.zig");
 pub const compat = @import("./bun_core/bzrt_compat.zig");
+/// Compile-time gates for not-yet-restored 1.3.14 modules (docs/status/restore.md).
+pub const restore_flags = @import("./bun_core/restore_flags.zig");
 pub const validators = @import("./runtime/node/util/validators.zig");
 
 // bzrt-cut: pub const shell = @import("./shell/shell.zig");
