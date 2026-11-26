@@ -38,10 +38,12 @@ const cases: [string, string, string][] = [
   ["params", 'const p = @typeInfo(@TypeOf(f)).@"fn".params;\n', 'const p = bun.meta.paramsOf(@typeInfo(@TypeOf(f)).@"fn");\n'],
   ["fn attrs", 'const v = @typeInfo(F).@"fn".is_var_args;\nconst cc = @typeInfo(F).@"fn".calling_convention;\n', 'const v = @typeInfo(F).@"fn".attrs.varargs;\nconst cc = @typeInfo(F).@"fn".attrs.@"callconv";\n'],
   ["pointer attrs", 'const k = @typeInfo(P).@"pointer".is_const;\n', 'const k = @typeInfo(P).@"pointer".attrs.@"const";\n'],
+  ["pointer align", 'const a = @typeInfo(P).pointer.alignment;\n', 'const a = @typeInfo(P).pointer.attrs.@"align";\n'],
   ["dupeZ", "const z = try a.dupeZ(u8, s);\n", "const z = try a.dupeSentinel(u8, s, 0);\n"],
   ["bufPrintZ", 'const z = try std.fmt.bufPrintZ(&buf, "{d}", .{n});\n', 'const z = try std.fmt.bufPrintSentinel(&buf, "{d}", .{n}, 0);\n'],
   ["meta.Int", "const I = std.meta.Int(.unsigned, 8);\n", "const I = @Int(.unsigned, 8);\n"],
   ["unquoted pointer", "const k = info.pointer.is_const;\n", 'const k = info.pointer.attrs.@"const";\n'],
+  ["std.meta.declarations", "for (std.meta.declarations(T)) |d| {}\n", "for (bun.meta.declsOf(T)) |d| {}\n"],
   ["std.meta.fields", "inline for (std.meta.fields(T)) |f| {}\n", "inline for (bun.meta.fieldsOf(T)) |f| {}\n"],
 ];
 

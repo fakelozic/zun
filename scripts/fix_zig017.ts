@@ -458,7 +458,7 @@ const reflection: Rule = {
   run(src, mask) {
     const edits: Edit[] = [];
     const re =
-      /\.(?:@"(struct|union|enum|opaque|fn|pointer)"|(pointer))\.(fields|decls|params|is_var_args|calling_convention|is_const|is_volatile|is_allowzero|address_space)\b/g;
+      /\.(?:@"(struct|union|enum|opaque|fn|pointer)"|(pointer))\.(fields|decls|params|is_var_args|calling_convention|is_const|is_volatile|is_allowzero|address_space|alignment)\b/g;
     let m: RegExpExecArray | null;
     while ((m = re.exec(src))) {
       if (!mask[m.index]) continue;
@@ -481,11 +481,19 @@ const reflection: Rule = {
         edits.push({ start: tagEnd, end, text: `.attrs.@"${member.slice(3)}"` });
       else if (kind === "pointer" && member === "address_space")
         edits.push({ start: tagEnd, end, text: '.attrs.@"addrspace"' });
+      else if (kind === "pointer" && member === "alignment")
+        edits.push({ start: tagEnd, end, text: '.attrs.@"align"' }); // was already ?usize in 0.16
     }
     const re2 = /\bstd\.meta\.fields\(/g;
     while ((m = re2.exec(src))) {
       if (!mask[m.index]) continue;
       edits.push({ start: m.index, end: m.index + m[0].length, text: "bun.meta.fieldsOf(" });
+    }
+    // 0.17: std.meta.declarations returns names, 0.16 returned Declaration{name}
+    const re3 = /\bstd\.meta\.declarations\(/g;
+    while ((m = re3.exec(src))) {
+      if (!mask[m.index]) continue;
+      edits.push({ start: m.index, end: m.index + m[0].length, text: "bun.meta.declsOf(" });
     }
     return edits;
   },
@@ -516,7 +524,6 @@ const REPORT_RULES: { name: string; re: RegExp; why: string }[] = [
   { name: "i0", re: /\bi0\b/, why: "i0 removed: use u0" },
   { name: "decl-info", re: /\bstd\.meta\.declarationInfo\b/, why: "compile error in 0.17: use @hasDecl / @typeInfo" },
   { name: "get-last", re: /\.getLast(OrNull)?\(\)/, why: "std ArrayList: getLast -> last().?, getLastOrNull -> last() (bun's own lists keep getLast)" },
-  { name: "pointer-alignment", re: /\.@"pointer"\.alignment\b|\.pointer\.alignment\b/, why: "Pointer.alignment -> attrs.@\"align\" (now ?usize, null = natural)" },
   { name: "info-var-fields", re: /\b(?:info|ti|type_info|tyinfo|struct_info|union_info|enum_info|fn_info)\.(?:fields|decls|params)\b/, why: "reflection through a variable: wrap with bun.meta.fieldsOf/declsOf/paramsOf" },
   { name: "has-decl", re: /@hasDecl\(/, why: "0.17: @hasDecl is true only for pub decls (audit: can silently flip comptime branches)" },
   { name: "bit-cast", re: /@bitCast\(/, why: "0.17: @bitCast on arrays/vectors uses logical bits; extern struct/union rejected (audit)" },

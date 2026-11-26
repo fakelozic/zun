@@ -2300,7 +2300,7 @@ const CompilerRT = struct {
         var bunCC = tmpdir.openDir(bun.compat.io(), "bun-cc", .{}) catch return;
         defer bunCC.close(bun.compat.io());
 
-        inline for (comptime std.meta.declarations(compiler_rt_sources)) |decl| {
+        inline for (comptime bun.meta.declsOf(compiler_rt_sources)) |decl| {
             const source = @field(compiler_rt_sources, decl.name);
             bunCC.writeFile(bun.compat.io(), .{
                 .sub_path = decl.name,
