@@ -52,7 +52,7 @@ covered by the probe and by reading, not by an end-to-end test.
 | `BrotliEncoderMode`, `…Parameter`, `BrotliDecoderParameter` | no (inputs to C) | none |
 | `zlib_sys.ReturnCode` (exhaustive) | yes, 5 `extern fn … ReturnCode` | zlib's `Z_*` codes (-6…2) are frozen API; zlib-ng returns only those. Low, **open** (make non-exhaustive on the next zlib-ng bump) |
 | `libdeflate.Status` (exhaustive) | yes | 4 codes, stable since libdeflate 1.0. Low, **open** (same) |
-| `c_ares.Error` | via `Error.get(rc)`, range-checked to `1…ARES_ENOSERVER` before `@enumFromInt` | fine as long as every code in that range is named; re-checked with the c-ares bump (H8) |
+| `c_ares.Error` | via `Error.get(rc)`, range-checked to `1…ARES_ENOSERVER` before `@enumFromInt` | re-checked with the H8 bump: 1.34.9 still ends at `ARES_ENOSERVER = 26` and all 26 are named. But `Error.get` ends in `else => unreachable` for any other value, so a future c-ares code would crash: **open** (needs a decision on what unknown codes map to; check on the next c-ares bump) |
 
 A tree-wide audit of exhaustive enums fed from C (BoringSSL, usockets, lsquic, …) is **open**; do it per dependency
 when each is bumped.

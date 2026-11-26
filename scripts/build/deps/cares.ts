@@ -12,7 +12,12 @@ import type { Config } from "../config.ts";
 import type { Dependency } from "../source.ts";
 import { depBuildDir } from "../source.ts";
 
-const CARES_COMMIT = "3ac47ee46edd8ea40370222f91613fc16c434853";
+// zun (security H8): v1.34.9 (CVE-2026-33630, -69184, -69186 and the other
+// fixes in 1.34.9). Pinned by the *commit* the tag points to. Bun 1.4.5 pins
+// 0b88066f…, which is the annotated tag object, not the commit. Resolved with
+// `git ls-remote https://github.com/c-ares/c-ares.git 'refs/tags/v1.34.9*'`
+// (the `^{}` line). Was 1.34.6 (3ac47ee4…).
+const CARES_COMMIT = "bc91829cce983a35ec01f5dbc05465858a3df469"; // v1.34.9
 
 // prettier-ignore
 const SOURCES = [
