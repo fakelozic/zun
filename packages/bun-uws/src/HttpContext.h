@@ -301,8 +301,11 @@ private:
             httpResponseData->state = HttpResponseData<SSL>::HTTP_RESPONSE_PENDING;
 
 
-            /* Mark this response as connectionClose if ancient or connection: close */
-            if (httpRequest->isAncient() || httpRequest->getHeader("connection").length() == 5) {
+            /* Mark this response as connectionClose if ancient or connection: close.
+             * The parser latched sawConnectionClose for this request (HTTP/1.0, or a
+             * "close" token anywhere in a Connection field) before calling us.
+             * zun H5 backport (Bun #33005). */
+            if (httpRequest->isAncient() || httpResponseData->sawConnectionClose) {
                 httpResponseData->state |= HttpResponseData<SSL>::HTTP_CONNECTION_CLOSE;
             }
 
