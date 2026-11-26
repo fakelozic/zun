@@ -16,12 +16,16 @@
   verified like downloads, and pre-extracted prefetch trees are never used (they can't be checked against a pin).
 - The oven-sh/zig auto-download is **removed** (SC-4): configure stops unless `BUN_ZIG_PATH` is set (vanilla Zig
   0.17.1). Previously a matching `vendor/zig/.zig-commit` stamp let an unverified tree be used.
-- Recording new pins is explicit and reviewable: `ZUN_PIN_RECORD=1` (trust on first use; cross-check, then review the diff).
+- Recording new pins is a separate command that builds nothing (SC-5): `bun scripts/build/record-pins.ts [--append]
+  [--keep] <url>...` downloads each URL into a fresh private temp dir and prints `<sha256>  <url>` (`--append` adds it
+  to `sha256sums.txt`; an existing pin is only compared, never replaced). It is trust on first use: cross-check, then
+  review the diff. A build never records or accepts an unpinned URL; the former `ZUN_PIN_RECORD=1` build mode, which
+  let the same build compile what it had just recorded, is removed.
 
 **Provenance of the initial pins:**
 | Pins | Source of trust |
 |------|-----------------|
-| 19 GitHub source archives | Fresh downloads recorded with `ZUN_PIN_RECORD=1`; each was **byte-identical** to the copy downloaded earlier the same day (archives are stable). Commits are immutable; the archive hash is TOFU |
+| 19 GitHub source archives | Fresh downloads recorded with the former `ZUN_PIN_RECORD=1` mode; each was **byte-identical** to the copy downloaded earlier the same day (archives are stable). Commits are immutable; the archive hash is TOFU |
 | WebKit `bun-webkit-linux-amd64-debug-asan` | Downloaded and hashed; equals GitHub's release-asset digest (`b1384cf9…`) |
 | Other Linux x64 WebKit variants (release, lto, asan, baseline) | GitHub release-asset digests of `autobuild-5488984d…` (not yet downloaded by zun) |
 | Node headers v24.3.0 | Downloaded and hashed; equals nodejs.org `SHASUMS256.txt` (`045e9bf4…`) |
@@ -30,6 +34,18 @@
 **Verified:** a wrong pin stops the build with `sha256 mismatch`; a missing pin stops it before downloading; a correct pin
 is a no-op (`up to date`). Repeat by editing one line of `sha256sums.txt` and running
 `bun scripts/build.ts --profile=debug --cache-dir=build/cache --target=clone-picohttpparser`.
+
+**Legacy provisioning paths: unpinned, not used by the documented Linux build, unsupported for production** (SC-5).
+They do not go through `sha256sums.txt`. Do not use them to produce release builds until they are pinned or retired:
+| Path | What it downloads | Verification |
+|------|-------------------|--------------|
+| `musl.Containerfile:22-26` | Zig 0.16.0 from ziglang.org (`wget` + `tar`), outdated for this tree (needs 0.17.1) | none |
+| `scripts/bootstrap.sh` `install_bun` (~`:1028-1035`) | a Bun release zip from an R2 bucket, installed to the bin dir | none |
+| `scripts/bootstrap.sh` LLVM via `apt.llvm.org/llvm.sh` (~`:1168-1172`) | a shell script run as root, which adds an apt repo | HTTPS only; the script is not pinned |
+| `scripts/bootstrap.sh`, the other ~15 `download_file` calls (Node.js, rustup and Homebrew installers, cmake, docker, tailscale, buildkite, NDK, …) | inherited CI image bake (Bun upstream's) | none per file; several are `curl \| sh` installers |
+| `scripts/prefetch-deps.ts` (SC-3) | warm-cache producer for CI images | `by-url` hits are extracted without verification |
+The documented build (`docs/build.md`) uses none of these: LLVM is the pinned tarball, Zig comes from mise via
+`BUN_ZIG_PATH`, Bun is the owner's mise install, and `BUN_BUILD_PREFETCH_DIR` is unset.
 
 **Still open:** SBOM per build (gap 8), release provenance (gap 9), mise toolchain verification (gap 7, row 10),
 GPG/attestation verification beyond sha256 (LLVM `.jsonl` attestation, Node's signed SHASUMS).

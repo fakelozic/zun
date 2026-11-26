@@ -31,7 +31,7 @@
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { appendFileSync, createReadStream, createWriteStream, existsSync, readFileSync } from "node:fs";
+import { createReadStream, createWriteStream, existsSync, readFileSync } from "node:fs";
 import { chmod, copyFile, cp, lstat, mkdir, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 import { Readable } from "node:stream";
@@ -49,9 +49,10 @@ import { BuildError, assert } from "./error.ts";
 // network, and verifies the bytes before publishing them; cached tarballs and extracted trees are re-checked against the
 // pin (see fetchDep / fetchPrebuilt). A mismatch is fatal: the file is deleted and the build stops.
 //
-// Recording a new pin (after a version bump) is an explicit, reviewable act: `ZUN_PIN_RECORD=1` appends the sha256 of
-// what was downloaded for each unpinned URL. That is trust-on-first-use, so cross-check against an independent source
-// where one exists (GitHub release asset digests, nodejs.org SHASUMS256.txt) and review the diff of sha256sums.txt.
+// Recording a new pin (after a version bump) is a separate, reviewable act that never builds anything:
+// `bun scripts/build/record-pins.ts <url>...` downloads each URL to a private temp dir and prints its sha256 (`--append`
+// adds it to sha256sums.txt). That is trust-on-first-use, so cross-check against an independent source where one exists
+// (GitHub release asset digests, nodejs.org SHASUMS256.txt) and review the diff. A build never records a pin (SC-5).
 
 export const sha256SumsFile = fileURLToPath(new URL("./deps/sha256sums.txt", import.meta.url));
 
@@ -68,23 +69,26 @@ function readPins(): Map<string, string> {
   return pins;
 }
 
-const recordPins = process.env.ZUN_PIN_RECORD === "1";
-
 /** The pinned sha256 for `url`, or undefined. */
 export function pinnedSha256(url: string): string | undefined {
   return readPins().get(url);
 }
 
-/** Fails (before any network access) unless `url` is pinned, or pin recording was explicitly requested. */
-function requirePin(url: string): string | undefined {
-  const pin = pinnedSha256(url);
-  if (pin !== undefined || recordPins) return pin;
-  throw new BuildError(`No sha256 is pinned for ${url}`, {
+function missingPin(url: string): BuildError {
+  return new BuildError(`No sha256 is pinned for ${url}`, {
     file: sha256SumsFile,
     hint:
-      "Every download must be pinned (AGENTS.md rule 6). Verify the artifact independently, then rebuild with " +
-      "ZUN_PIN_RECORD=1 to record its sha256, and review the diff of scripts/build/deps/sha256sums.txt",
+      "Every download must be pinned (AGENTS.md rule 6). Record it outside the build with " +
+      `\`bun scripts/build/record-pins.ts ${url}\`, cross-check the sha256 independently, and review the diff of ` +
+      "scripts/build/deps/sha256sums.txt",
   });
+}
+
+/** The pin for `url`. Fails (before any network access) if there is none: builds never consume unpinned artifacts. */
+function requirePin(url: string): string {
+  const pin = pinnedSha256(url);
+  if (pin === undefined) throw missingPin(url);
+  return pin;
 }
 
 export async function sha256File(path: string): Promise<string> {
@@ -94,18 +98,12 @@ export async function sha256File(path: string): Promise<string> {
 }
 
 /**
- * Checks `path` against the pin for `url` and returns its sha256. With no pin and ZUN_PIN_RECORD=1, records it.
+ * Checks `path` against the pin for `url` and returns its sha256. A missing pin is an error.
  * On a mismatch the file is deleted and the build stops: it is either corrupt or not what we pinned.
  */
 export async function verifyPinnedFile(path: string, url: string): Promise<string> {
+  const pin = requirePin(url);
   const actual = await sha256File(path);
-  const pin = pinnedSha256(url);
-  if (pin === undefined) {
-    assert(recordPins, `No sha256 is pinned for ${url}`, { file: sha256SumsFile });
-    appendFileSync(sha256SumsFile, `${actual}  ${url}\n`);
-    console.log(`recorded sha256 ${actual} for ${url} (ZUN_PIN_RECORD=1; review the diff)`);
-    return actual;
-  }
   if (actual !== pin) {
     await rm(path, { force: true });
     throw new BuildError(`sha256 mismatch for ${url}: expected ${pin}, got ${actual}`, {
@@ -368,7 +366,7 @@ export async function fetchPrebuilt(
   // zun: the extracted tree records the sha256 of the tarball it came from; it is reused only if that is the pin.
   const shaStampPath = resolve(dest, ".sha256");
   const pin = requirePin(url);
-  const shaOk = pin !== undefined && existsSync(shaStampPath) && readFileSync(shaStampPath, "utf8").trim() === pin;
+  const shaOk = existsSync(shaStampPath) && readFileSync(shaStampPath, "utf8").trim() === pin;
 
   // ─── Short-circuit: already at this identity? ───
   if (existsSync(stampPath) && shaOk) {

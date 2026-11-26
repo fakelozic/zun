@@ -1,7 +1,7 @@
 # zun (security: supply chain): sha256 of every file the build downloads. Format: <sha256>  <url>
 # Enforced by scripts/build/download.ts (downloadWithRetry / fetchDep / fetchPrebuilt): an unpinned URL or a mismatch
-# stops the build. To add pins after a version bump: verify the artifact independently, rebuild with ZUN_PIN_RECORD=1,
-# and review this file's diff. Provenance of each pin: docs/security/supply-chain.md.
+# stops the build. To add pins after a version bump: `bun scripts/build/record-pins.ts [--append] <url>...` (builds
+# nothing), cross-check each sha256 independently, and review this file's diff. Provenance: docs/security/supply-chain.md.
 bd773fad1e2c6532b7a65ef6b60dec3612a3e566e3c844272cc2cbab89dc7e9c  https://github.com/h2o/picohttpparser/archive/f4d94b48b31e0abae029ebeafcfd9ca0680ede58.tar.gz
 440f3a94390c78eab88f74b92944d2f6b248e592e984412e389885dfb5796bf0  https://github.com/libjpeg-turbo/libjpeg-turbo/archive/e352b02f794f701407b39af08576035ba3360d60.tar.gz
 a0d2a5d122c84b56a793a1553a9c3327fb2eb7469bf7a86b79e3c7be5d92e8d6  https://github.com/zlib-ng/zlib-ng/archive/12731092979c6d07f42da27da673a9f6c7b13586.tar.gz
