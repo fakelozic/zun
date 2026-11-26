@@ -215,7 +215,7 @@ re-verification of the cached chain in the same change. Source: `review-2026-11-
   related H2 note: zun also reuses an idle pooled socket that received unsolicited bytes, where Bun 1.4.5 opens a new
   one.
 
-### H5-1: `Bun.serve` keeps the connection open after an async response to a `Connection: close` request (Low), fix prepared (branch `t3/fix-async-connection-close`), unverified
+### H5-1: `Bun.serve` keeps the connection open after an async response to a `Connection: close` request (Low), **fixed 2026-11-27** (built; `test-zun-serve-close-after-async.mjs` passes; 56 earlier-passing HTTP server/keep-alive/pipeline tests still pass)
 
 - **What:** request with `Connection: close` + an async handler: the response is sent, later pipelined bytes are discarded
   (the H5 smuggling fix holds: `/b` never reaches the handler), but the server never closes the socket. Bun 1.4.5 closes.

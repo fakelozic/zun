@@ -1,6 +1,6 @@
 # H5-1: Close the HTTP/1.1 connection after an async response
 
-- **Status:** fix prepared on `t3/fix-async-connection-close`, unverified on a patched build.
+- **Status:** **fixed and verified 2026-11-27** (built; regression test passes; 56 earlier-passing HTTP server/keep-alive/pipeline parity tests still pass).
 - **Severity:** low, security-relevant resource retention. H5 still discards later pipelined requests.
 - **Found:** H5 backport verification, 2026-11-27.
 
