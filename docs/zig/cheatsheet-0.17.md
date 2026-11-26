@@ -1,7 +1,7 @@
 # Zig 0.17 cheatsheet (verified)
 
 Every claim below is backed by a probe that compiles and passes on **zig 0.17.1**
-(2026-11-26): `probes/basics.zig`, `probes/std-0.17.zig`, `probes/reflection-io.zig` and `probes/hello.zig`.
+(2026-11-26): `probes/basics.zig`, `probes/std-0.17.zig`, `probes/reflection-io.zig`, `probes/native-deps.zig` and `probes/hello.zig`.
 The build.zig skeleton comes from `zig init`. **When you add a line here, add its probe in the same change.**
 
 ## Entry point ("Juicy Main")
@@ -150,7 +150,7 @@ std.mem.cutPrefix(u8, "foobar", "foo") // ?[]const u8 -> "bar"
 | `usingnamespace` | explicit decls / re-exports | 0.15 |
 | `async` / `await` keywords | `io.async` / `Future.await` | 0.15 |
 | `@cImport` / `@cInclude` | build-system C translation (`translate_c` package) | removed 0.17 |
-| `[_]u8{0} ** n` | `@splat(0)` | 0.17 |
+| `[_]u8{0} ** n`, `"ab" ** n` (`**` is gone for every operand) | `@splat(0)`, or a comptime loop for strings | 0.17 |
 | `void{}` | `{}` | 0.17 |
 | `errdefer \|err\|` | split into an inner fn + `catch \|err\|` | 0.17 |
 | `i0` | `u0` | 0.17 |
@@ -162,6 +162,30 @@ New in 0.17: `@divCeil`, `@backingInt` / `@fromBackingInt` (packed types ↔ bac
 *logical* bits, and `extern struct` / `extern union` casts are rejected. Some
 changes don't produce a compile error. For type punning an extern struct, use
 `@ptrCast` to an `*align(1) const T`.
+
+## Compression, archives, password hashing (`probes/native-deps.zig`)
+
+```zig
+const flate = std.compress.flate;                // Container: .raw, .gzip, .zlib
+var out: std.Io.Writer.Allocating = try .initCapacity(gpa, 64); // Compress asserts output buffer > 8 bytes
+var c = try flate.Compress.init(&out.writer, window, .gzip, .default); // window.len >= flate.max_window_len
+try c.writer.writeAll(data);
+try c.finish();
+
+var in: std.Io.Reader = .fixed(compressed);
+var d: flate.Decompress = .init(&in, .gzip, &.{});  // empty buffer = direct mode, stream into a Writer
+_ = try d.reader.streamRemaining(&out.writer);
+
+var z: std.compress.zstd.Decompress = .init(&in, &.{}, .{}); // decoder only; no zstd encoder in std
+try std.crypto.pwhash.argon2.kdf(gpa, &key, pw, salt, .{ .t = 2, .m = 64, .p = 1 }, .argon2id, io);
+std.hash.Crc32.hash(bytes);                       // same value as zlib crc32
+var tw: std.tar.Writer = .{ .underlying_writer = w }; // + std.tar.Iterator for reading
+```
+- std flate output is valid but **not byte-identical to zlib(-ng)**, and `flush()` is not `Z_SYNC_FLUSH`
+  (no guaranteed `00 00 ff ff`). No dictionaries, no `windowBits` < 15.
+- `zstd.Decompress` options: `verify_checksum = true` panics (not implemented); dictionary frames fail.
+- `argon2.kdf` matches Node's `crypto.argon2Sync`, and rejects `m < 8 * p` with `error.WeakParameters`.
+- `std.tar` handles file/dir/symlink with name/size/mode only (it exists for the Zig package manager).
 
 ## Testing
 

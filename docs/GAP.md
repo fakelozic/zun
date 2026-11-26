@@ -86,6 +86,7 @@ commit for every parity check and re-baseline from time to time.
 
 Canary's rewrites show that each of these can be replaced and give a working reference
 implementation to port from. Bun's own direction now matches zun's Phase 6.
+Per-library findings, std coverage and order: `docs/plan/native-deps.md`.
 
 ## 5. AoT compilation (canary only, experimental)
 
