@@ -1,15 +1,26 @@
 --- a/picohttpparser.c
 +++ b/picohttpparser.c
-@@ -703,6 +703,13 @@
+@@ -703,6 +703,24 @@
      return decoder->_state == CHUNKED_IN_TRAILERS_LINE_HEAD || decoder->_state == CHUNKED_IN_TRAILERS_LINE_MIDDLE;
  }
  
 +/* zun: src/picohttp_sys/picohttpparser.zig declares this struct by hand (and embeds it in the HTTP client state). Keep the
 + * two in sync: a dependency bump that changes the layout must fail the build here, not corrupt memory at run time. The Zig
-+ * side checks the same numbers at comptime. */
++ * side checks the same numbers at comptime. Every field is pinned (offset and size), plus the struct's size and alignment:
++ * Zig writes consume_trailer and zero-initializes the whole struct, so a move inside the prefix matters too. */
++#define ZUN_PHR_CHECK(field, off, size)                                                                                         \
++    _Static_assert(offsetof(struct phr_chunked_decoder, field) == (off) &&                                                       \
++                       sizeof(((struct phr_chunked_decoder *)0)->field) == (size),                                               \
++                   "zun: update struct_phr_chunked_decoder." #field " in picohttpparser.zig")
++ZUN_PHR_CHECK(bytes_left_in_chunk, 0, 8);
++ZUN_PHR_CHECK(consume_trailer, 8, 1);
++ZUN_PHR_CHECK(_hex_count, 9, 1);
++ZUN_PHR_CHECK(_state, 10, 1);
++ZUN_PHR_CHECK(_total_read, 16, 8);
++ZUN_PHR_CHECK(_total_overhead, 24, 8);
++#undef ZUN_PHR_CHECK
 +_Static_assert(sizeof(struct phr_chunked_decoder) == 32, "zun: update struct_phr_chunked_decoder in picohttpparser.zig");
-+_Static_assert(offsetof(struct phr_chunked_decoder, _total_read) == 16, "zun: update struct_phr_chunked_decoder in picohttpparser.zig");
-+_Static_assert(offsetof(struct phr_chunked_decoder, _total_overhead) == 24, "zun: update struct_phr_chunked_decoder in picohttpparser.zig");
++_Static_assert(_Alignof(struct phr_chunked_decoder) == 8, "zun: update struct_phr_chunked_decoder in picohttpparser.zig");
 +
  #undef CHECK_EOF
  #undef EXPECT_CHAR

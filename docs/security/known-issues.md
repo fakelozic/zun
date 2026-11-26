@@ -158,6 +158,23 @@ against the same server). Suspected cause: `src/js/node/net.ts` applies the sess
 zun and upstream), so a session made before a key was blocked (C2) or under a different `ca` would be accepted. Turn on
 re-verification of the cached chain in the same change. Source: `review-2026-11-26-verify-C2.md` (C2-3).
 
+### FETCH-2 (review H1-1): chunked framing without body bytes keeps a fetch alive forever (Medium), open, shared with Bun 1.4.5
+
+- A server can send endless chunk extensions or trailer lines with no body bytes. CPU is linear in the bytes and RSS is
+  flat (no spin, no growth), but the request never ends while the peer stays active. Nothing caps extension or trailer
+  length. Evidence and the fix sketch (per-line and per-response caps in the decoder) are in
+  `review-2026-11-26-verify-H1.md`. **Mitigation now:** pass an `AbortSignal.timeout()` to fetches of untrusted
+  origins.
+
+### FETCH-3 (review H1-2): lax trailer terminator; same-read surplus discarded and socket reused (Medium), open, shared with Bun 1.4.5
+
+- `0\r\n\n` and `0\r\n\r\r\n` complete a chunked body (Node rejects them). Bytes after the terminator in the same
+  read are dropped and the socket goes back to the keep-alive pool. No desync was reproduced, but this leniency is a
+  smuggling primitive behind a strict proxy. Fix sketch: require CRLF in the trailer states, and disable keep-alive when
+  `phr_decode_chunked` returns > 0 (`src/http/http.zig:2712`, `:2794`). See `review-2026-11-26-verify-H1.md`. A
+  related H2 note: zun also reuses an idle pooled socket that received unsolicited bytes, where Bun 1.4.5 opens a new
+  one.
+
 ### RT-4: `__crullerHandle` SSR dispatch drops JS exceptions (dormant), open
 
 - `src/rt/jsc_engine.zig` `callHandler` / `src/rt/server_dispatch.zig:59`: a throw in `globalThis.__crullerHandle`

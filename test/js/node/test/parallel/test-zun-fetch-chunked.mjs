@@ -2,6 +2,9 @@
 // Each case is a raw HTTP response written by a TCP server; fetch must either return the exact
 // body or reject. A truncated body must never be reported as complete (picohttpparser renumbered
 // its private decoder states; reading the old numbers would have accepted a cut-off body).
+// The new C enum is 3 = CHUNK_DATA, 4 = DATA_EXPECT_CR, 5 = DATA_EXPECT_LF, 6/7 = TRAILERS_LINE_*;
+// the old Zig mirror treated 4 and 5 as "in trailers" (body complete). The two "after full chunk
+// data" cases below end in exactly states 4 and 5, so they are the ones that catch a stale mirror.
 import assert from "node:assert";
 import net from "node:net";
 
@@ -18,6 +21,8 @@ const cases = [
   { name: "chunk size overflow", raw: head + "ffffffffffffffffff\r\nhello\r\n0\r\n\r\n", reject: true },
   { name: "missing CRLF after data", raw: head + "5\r\nhelloXX0\r\n\r\n", reject: true },
   { name: "truncated mid chunk then close", raw: head + "5\r\nhel", reject: true },
+  { name: "truncated after full chunk data, before CRLF", raw: head + "5\r\nhello", reject: true },
+  { name: "truncated after full chunk data, inside CRLF", raw: head + "5\r\nhello\r", reject: true },
   { name: "truncated before terminal chunk", raw: head + "5\r\nhello\r\n", reject: true },
 ];
 

@@ -154,3 +154,11 @@ implementations use it (`src/http/h2_client/ClientSession.zig`, `src/http/H2Fram
 `src/runtime/api/bun/h2_frame_parser.zig` for node:http2). zun talking to zun is symmetric, so the bug stays hidden;
 it only shows against a real peer (Node, a browser, nginx).
 
+
+## 2026-11-26: pinning a hand-written `extern struct` mirror field by field
+
+Verified on 0.17.1 (probe `probes/abi-field-check/check.zig`, used for review H1-4 in `src/picohttp_sys/picohttpparser.zig`):
+inside a type's `comptime {}` block a plain `for` over a tuple of `.{ "name", offset, size }` tuples works, and
+`@offsetOf`, `@sizeOf(@FieldType(T, name))`, `@alignOf(T)` and `@typeInfo(T).@"struct".field_names.len` are all
+comptime-known. Checking only `@sizeOf` and the last offsets misses a field moving inside the prefix; check every field
+(and the count, so an added field fails too), with matching C `_Static_assert`s on the other side.
