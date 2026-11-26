@@ -229,6 +229,7 @@ pub const Parser = struct {
 pub fn renderToHtml(text: []const u8, allocator: Allocator, flags: Flags, render_opts: root.RenderOptions) Parser.Error![]u8 {
     // Skip UTF-8 BOM
     const input = helpers.skipUtf8Bom(text);
+    try checkInputSize(input);
 
     var html_renderer = HtmlRenderer.init(allocator, input, render_opts);
     errdefer html_renderer.deinit();
@@ -246,6 +247,14 @@ pub fn renderToHtml(text: []const u8, allocator: Allocator, flags: Flags, render
     return html_renderer.toOwnedSlice();
 }
 
+/// zun: the parser stores offsets as `OFF` (u32) and `Parser.init` does `@intCast(text.len)`.
+/// Reject larger input here instead of panicking (safe builds) or truncating (ReleaseFast).
+/// Reported as OutOfMemory so the existing error sets and JS paths are unchanged.
+/// See docs/security/known-issues.md § md.
+fn checkInputSize(input: []const u8) error{OutOfMemory}!void {
+    if (input.len > std.math.maxInt(OFF)) return error.OutOfMemory;
+}
+
 /// Parse and render using a custom renderer. The caller provides its own
 /// Renderer implementation (e.g. for JS callback-based rendering).
 /// `render_options` carries render-only flags (tag_filter, heading_ids,
@@ -253,6 +262,7 @@ pub fn renderToHtml(text: []const u8, allocator: Allocator, flags: Flags, render
 pub fn renderWithRenderer(text: []const u8, allocator: Allocator, flags: Flags, render_options: root.RenderOptions, rend: Renderer) Parser.Error!void {
     _ = render_options; // Available for renderer implementations; parse layer does not use these.
     const input = helpers.skipUtf8Bom(text);
+    try checkInputSize(input);
 
     var p = Parser.init(allocator, input, flags, rend);
     defer p.deinit();

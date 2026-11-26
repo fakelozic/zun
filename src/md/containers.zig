@@ -6,7 +6,9 @@ pub fn pushContainer(self: *Parser, c: *const Container) error{OutOfMemory}!void
     }
 
     // Record block_byte offset in the container
-    const block_off: u32 = @intCast(self.block_bytes.items.len);
+    // zun: checked (block_bytes grows ~12-16 bytes per input line, so it can pass 4 GiB
+    // before the input does); docs/security/known-issues.md § md.
+    const block_off: u32 = std.math.cast(u32, self.block_bytes.items.len) orelse return error.OutOfMemory;
     self.containers.items[self.n_containers].block_byte_off = block_off;
 
     self.n_containers += 1;
@@ -42,14 +44,14 @@ pub fn enterChildContainers(self: *Parser, count: u32) error{OutOfMemory}!void {
         } else if (c.ch == '-' or c.ch == '+' or c.ch == '*') {
             // Save opener position for later loose-list patching
             const align_mask_: usize = @alignOf(BlockHeader) - 1;
-            c.block_byte_off = @intCast((self.block_bytes.items.len + align_mask_) & ~align_mask_);
+            c.block_byte_off = std.math.cast(u32, (self.block_bytes.items.len + align_mask_) & ~align_mask_) orelse return error.OutOfMemory; // zun: checked
             // Unordered list + list item
             try self.pushContainerBytes(.ul, 0, types.BLOCK_CONTAINER_OPENER);
             try self.pushContainerBytes(.li, if (c.is_task) @as(u32, self.text[c.task_mark_off]) else 0, types.BLOCK_CONTAINER_OPENER);
         } else if (c.ch == '.' or c.ch == ')') {
             // Save opener position for later loose-list patching
             const align_mask_: usize = @alignOf(BlockHeader) - 1;
-            c.block_byte_off = @intCast((self.block_bytes.items.len + align_mask_) & ~align_mask_);
+            c.block_byte_off = std.math.cast(u32, (self.block_bytes.items.len + align_mask_) & ~align_mask_) orelse return error.OutOfMemory; // zun: checked
             // Ordered list + list item
             try self.pushContainerBytes(.ol, c.start, types.BLOCK_CONTAINER_OPENER);
             try self.pushContainerBytes(.li, if (c.is_task) @as(u32, self.text[c.task_mark_off]) else 0, types.BLOCK_CONTAINER_OPENER);
@@ -120,7 +122,7 @@ pub fn processAllBlocks(self: *Parser) Parser.Error!void {
         const flags = hdr.flags;
 
         // Read lines after header
-        const lines_size = n_lines * @sizeOf(VerbatimLine);
+        const lines_size = @as(usize, n_lines) * @sizeOf(VerbatimLine); // zun: usize, a u32 product could wrap past the bounds check below
         if (off + lines_size > bytes.len) break;
         const line_data: [*]const VerbatimLine = @ptrCast(@alignCast(bytes.ptr + off));
         const block_lines = line_data[0..n_lines];
@@ -190,3 +192,5 @@ const Align = types.Align;
 const BlockType = types.BlockType;
 const Container = types.Container;
 const VerbatimLine = types.VerbatimLine;
+
+const std = @import("std");

@@ -253,7 +253,7 @@ pub fn buildRefDefHashtable(self: *Parser) error{OutOfMemory}!void {
         off += @sizeOf(BlockHeader);
 
         const n_lines = hdr.n_lines;
-        const lines_size = n_lines * @sizeOf(VerbatimLine);
+        const lines_size = @as(usize, n_lines) * @sizeOf(VerbatimLine); // zun: usize, a u32 product could wrap past the bounds check below
         if (off + lines_size > bytes.len) break;
 
         const line_ptr: [*]VerbatimLine = @ptrCast(@alignCast(bytes.ptr + off));
