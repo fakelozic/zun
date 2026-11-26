@@ -129,3 +129,6 @@ Old `build/debug/bun-debug` binaries from before Phase 3 are stale; delete them 
 
 A passing test prints only its name and `End`; a failing one prints the output and a red status
 (`SIGABRT`, `fail`, …). The runner exits 1 on failure and 0 on success.
+
+To measure the whole suite (classification, pass/fail per area, failure clusters), use the parity
+harness instead: `bun scripts/parity.ts --exec-path build/debug/zun-debug --jobs 6`. See `docs/status/parity.md`.
