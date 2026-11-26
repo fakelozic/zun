@@ -22,6 +22,8 @@ commits reverted). How to build: `docs/build.md`.
   '../fixtures/bzrt/esm-lib.ts' from 'test/js/node/test/parallel/[eval]'`. With an absolute path (what the test
   runner passes) or from inside the file's directory it works. The entry is loaded as an eval script
   (`bun_js.runSourceWithHook`) and its dirname is not made absolute. Belongs with the CLI restore (Phase 4).
+  **Fixed 2026-11-26 (SEC2 Part 0, RT-2):** the launcher now runs the file itself with an absolute path; the
+  relative-path command above exits 0. `docs/rca/RT-2-cjs-entry-errors-swallowed.md`.
 
 ## Build
 
@@ -32,6 +34,22 @@ commits reverted). How to build: `docs/build.md`.
 | `bun-debug --version` | `1.3.14-debug` |
 | Release build | not tried (needs nightly Rust for lol-html per `problem.md`) |
 | `zig build --build-file build016.zig check` | not run (it would write to `~/.bun/build-cache`, see `docs/build.md`) |
+
+## Gate re-run after the RT-2 fix (2026-11-26, Zig 0.17.1, `zun-debug`)
+
+The Phase 1–3 results below were taken while CJS entry errors were swallowed (RT-2), so the CJS rows could not fail.
+Re-run after the fix, with `scripts/zun-negative-controls.sh` passing (7/7: failing CJS/ESM tests are reported as FAIL):
+
+| Test | Kind | Result |
+|------|------|--------|
+| `test-bzrt-runtime-smoke.js` | CJS | ✅ pass |
+| `test-bzrt-esm-import.js` | ESM | ✅ pass |
+| `test-path-basename.js` | CJS | ✅ pass (was a false pass before: `__filename` was `[eval]`) |
+| `test-path-dirname.js` | CJS | ✅ pass |
+| `test-path-extname.js` | CJS | ✅ pass (was a false pass before, same reason) |
+| `test-path-join.js` | CJS | ✅ pass |
+| `test-zun-identity.js` | CJS | ✅ pass |
+| `test-zun-markdown.js` | ESM | ✅ pass |
 
 ## Tests (`scripts/runner.node.mjs`, debug binary)
 

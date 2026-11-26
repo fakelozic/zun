@@ -37,9 +37,12 @@ pub export fn Bake__getNewRouteParamsJSFunctionImpl(_: *JSGlobalObject) JSValue 
 // is a real, live implementation (kept alive via fixDeadCodeElimination(),
 // called from bun.js.zig's Run exit path), not a CUT feature.
 
-pub export fn Bun__Node__ZeroFillBuffers(_: *JSGlobalObject, _: *jsc.CallFrame) JSValue {
-    return .js_undefined;
-}
+// zun (RT-1): C++ reads this as a data symbol (`extern "C" bool` in
+// JSBuffer.cpp, used by `Buffer.allocUnsafe`). It was stubbed as a function,
+// so C++ read the first byte of machine code as the bool. Upstream 1.3.14
+// defines it exactly like this in src/cli/Arguments.zig, where
+// `--zero-fill-buffers` sets it; the CLI restore moves it back there.
+pub export var Bun__Node__ZeroFillBuffers: bool = false;
 
 pub export fn BunServe__onResolvePlugins(_: *JSGlobalObject, _: *jsc.CallFrame) JSValue {
     return .js_undefined;

@@ -100,3 +100,12 @@ codemod over the whole tree (`--check src` must stay clean) so dead files get th
 A gate like `const Shell = if (flag) @import("./shell/shell.zig") else struct {};` fails when the file is
 absent, even though the branch is dead: Zig loads every imported file eagerly. Gates can only hide **decls**
 (`bun.shell.x`) behind `if (comptime flag)`. `probes/comptime-gate/run.sh`.
+
+## 2026-11-26: `[][:0]const u8` coerces to `[]const []const u8`; `export var` vs `export fn`
+
+Writing the RT-2 launcher fix, the agent assumed `bun.argv` (`[][:0]const u8`) would not coerce to
+`[]const []const u8` and wrote a copy loop. The probe showed it does coerce on 0.17.1, sharing the same memory,
+so the copy was removed. RT-1 was the opposite kind of mistake: cruller stubbed a C `extern bool` as an
+`export fn`, so C++ read instruction bytes as the flag. `export var x: bool = false;` gives a BSS data symbol
+(`nm`: `B`). Probe: `probes/rt2-launcher/coerce.zig`. **Do:** when C declares `extern T name;`, the Zig side
+must be `export var`, and check with `nm` (`T` = code, `B`/`D` = data).

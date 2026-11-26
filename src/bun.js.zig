@@ -542,8 +542,25 @@ pub const Run = struct {
 /// bzrt: minimal production loader. `src/cli/` (arg parsing, bunfig.toml,
 /// command dispatch) is fully removed; this builds just enough of
 /// `Command.ContextData` for `Run.boot` (real, un-CUT bootstrap/event-loop
-/// code) to load and run a single pre-built entrypoint file.
-pub fn runEntryFile(allocator: std.mem.Allocator, entry_path: [:0]const u8) !void {
+/// code) to load and run a single entry file from disk.
+///
+/// zun (RT-2): the launcher used to hand the file's bytes to `runSourceWithHook`,
+/// i.e. Bun's `-e` eval mode with a synthetic `<dir>/[eval]` entry. In that mode
+/// the CJS wrapper is removed and a CJS entry's completion goes through the
+/// eval-result path, so an uncaught throw in a CommonJS entry exited 0 silently,
+/// `__filename` ended in `[eval]`, and `process.argv` lost the script path. Running
+/// the real file, as Bun's `bun file.js` does, fixes all three.
+/// `passthrough` becomes `process.argv.slice(2)`.
+pub fn runEntryFile(
+    allocator: std.mem.Allocator,
+    entry_path: []const u8,
+    passthrough: []const []const u8,
+    hook: ?SourceLoadedHook,
+) !void {
+    std.debug.assert(source_loaded_hook == null);
+    source_loaded_hook = hook;
+    defer source_loaded_hook = null;
+
     // The resolver treats a bare relative path as a package specifier. The
     // removed CLI used to canonicalize entrypoints before reaching Run.boot,
     // so retain that boundary here for the minimal launcher.
@@ -575,6 +592,7 @@ pub fn runEntryFile(allocator: std.mem.Allocator, entry_path: [:0]const u8) !voi
             .ignore_dce_annotations = false,
             .bunfig_path = config_path,
         },
+        .passthrough = passthrough,
     };
 
     try Run.boot(ctx, absolute_entry_path, null);

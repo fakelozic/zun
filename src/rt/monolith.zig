@@ -53,13 +53,15 @@ pub fn RuntimeFor(comptime kind: engine_selector.Kind) type {
             self.initialized = false;
         }
 
-        pub fn loadEntryPath(self: *Self, entry_path: []const u8) !void {
-            const source = try std.Io.Dir.cwd().readFileAlloc(bun.compat.io(), entry_path, self.allocator, .limited(std.math.maxInt(u32)));
-            defer self.allocator.free(source);
-            const source_ref = try self.data_pool.copy(source);
+        /// zun (RT-2): the engine now runs the entry from disk (as `bun file.js`
+        /// does), so only the path crosses the boundary; the source buffer is
+        /// empty. `passthrough` is `process.argv.slice(2)`.
+        pub fn loadEntryPath(self: *Self, entry_path: []const u8, passthrough: []const []const u8) !void {
+            const source_ref = try self.data_pool.copy("");
             defer self.data_pool.transport().release(source_ref);
             const name_ref = try self.data_pool.copy(entry_path);
             defer self.data_pool.transport().release(name_ref);
+            if (kind == .jsc) self.implementation.passthrough = passthrough;
             try self.engine.load(source_ref, name_ref);
         }
 

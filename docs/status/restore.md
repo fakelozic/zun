@@ -251,25 +251,15 @@ The scan misses files that `build.zig` registers as named modules (`src/aio/posi
 `src/zlib_sys/posix.zig` = `@import("zlib-internal")`, `build.zig:91-93`: both compiled, both left out). Verify a row before relying on it.
 Beyond the unreferenced files, **byte-identical but referenced** files (372 files, 141k lines) are fine: they were compiled.
 
-## Known problem: the current launcher hides test failures
+## Fixed: the launcher hid test failures (RT-2)
 
-Found 2026-11-26 during the md restore; **this affects every runner-style gate until the CLI restore (item 3)**,
-which replaces cruller's launcher (`src/main.zig` → `bun.rt.monolith.Runtime`).
-
-1. **An uncaught exception in a CommonJS entry file exits 0 with no output.** `require("node:assert").strictEqual(1, 2)`
-   in a `.js` file that uses `require` → exit 0. The same in ESM (`import assert from "node:assert"`) prints the
-   error and exits 1. Plain `throw` in a file with no `require`/`module` also reports correctly.
-2. **Entry files run through the eval-source path**: `__filename` and `import.meta.path` end in `[eval]`, and for a
-   relative entry path `import.meta.dir` lacks the cwd (`/test/js/...`). The runner passes relative paths.
-3. Script arguments are not passed to `process.argv` (`zun-debug x.js a b` → `[execPath]`).
-
-Consequence: of the 7 existing gate tests, the 5 CJS ones cannot fail on an assertion. Re-running ESM copies showed
-**`test-path-extname` really fails** (`path.extname(__filename)` is `""` because `__filename` is `[eval]`), and
-`test-path-basename` asserts `path.basename(__filename) === 'test-path-basename.js'`, which must fail for the same
-reason. Both are reported as passing today. `test-bzrt-runtime-smoke`, `test-path-join` and `test-zun-identity` pass
-as ESM too; `test-path-dirname` could not be converted mechanically (it imports `../common`).
-New runner-style tests should be ESM until the launcher is replaced (`test-zun-markdown.js` is, and the runner
-fails it on a broken assertion; checked).
+Found 2026-11-26 during the md restore, fixed by SEC2 Part 0 (`docs/rca/RT-2-cjs-entry-errors-swallowed.md`).
+Cruller's launcher ran every entry as `-e` eval source, where a synchronous throw in a CommonJS body was cleared by
+`JSC::evaluate`'s 3-arg overload: CJS entries that threw exited 0 silently, `__filename` was `[eval]` and script
+arguments were dropped. Both causes are fixed; `test-path-extname` / `test-path-basename` (which really failed
+because of `__filename`) now pass for the right reason, and `scripts/zun-negative-controls.sh` proves that the runner
+reports failing CJS and ESM tests as FAIL. Run it after any change to the launcher or the runner. Runner-style tests
+can be CJS or ESM again.
 
 ## md
 

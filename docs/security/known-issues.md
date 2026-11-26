@@ -54,21 +54,41 @@ rendered by a server). Review scope: `src/md/*.zig`, `src/runtime/api/MarkdownOb
 
 ## Runtime (found during the md restore)
 
-### RT-1: `Bun__Node__ZeroFillBuffers` type confusion, open
+### RT-3: ASAN `CHECK failed` at Web Worker thread teardown (debug build), open
 
-- C++ declares `extern "C" bool Bun__Node__ZeroFillBuffers;` (`src/jsc/bindings/JSBuffer.cpp:86`) and reads it in
-  `Buffer.allocUnsafe` paths (l.505). Upstream defines it as `export var … = false` in `src/cli/Arguments.zig:1709`
-  (set by `--zero-fill-buffers`). zun's stub defines a **function** with that name
-  (`src/jsc/vm_exports_stub.zig:40`), so C++ reads the first byte of machine code as the bool: in practice always
-  true, so every `allocUnsafe` buffer is zero-filled. Fails safe (no uninitialised memory leaks out), but it is
-  undefined behaviour and a silent divergence from Bun.
-- **Fix:** `export var Bun__Node__ZeroFillBuffers: bool = false;` (exactly upstream). Deferred to the CLI restore
-  (item 3), which brings back the real definition and the flag. Owner decides whether to fix earlier.
+- Every `new Worker(...)` (Web Worker API), even one that only `postMessage`s, makes the ASAN debug build print
+  `AddressSanitizer: CHECK failed: asan_thread.cpp:369 "((ptr[0] == kCurrentStackFrameMagic)) != (0)"` from the worker
+  thread at exit (`ASAN_OPTIONS=log_path=…` shows the full line; on stderr it is cut off after the `====` banner).
+  The main process still exits 0 (a racing `Die()` in the worker thread). `worker_threads` workers behave the same way
+  only when they exit normally; untested.
+- Found 2026-11-26 by the RT-2 sibling search (`docs/rca/RT-2-cjs-entry-errors-swallowed.md`). Not related to RT-2
+  (no worker code was touched). Not yet known whether a release build is affected or whether it is real stack
+  corruption vs. an ASAN/fake-stack interaction with how the worker thread exits (e.g. `pthread_exit` / stack switch).
+- **Plan:** reproduce on Bun 1.3.14's own ASAN build if possible; check how `WebWorker.zig` ends the thread. Until
+  then, treat Web Workers as untested in zun.
 
-## RT-2 (open, High for production): CommonJS entry errors are swallowed
+### RT-4: `__crullerHandle` SSR dispatch drops JS exceptions (dormant), open
 
-Found by T4.1, reproduced 2026-11-26 at `c98d508`: a CJS entry file that throws (e.g. `assert.strictEqual(1, 2)` after
-`require("assert")`) makes `zun` exit **0** with **no output**. ESM files and plain top-level throws exit 1 correctly. In production,
-a CJS app that crashes at startup would look successful to a supervisor. Cause: cruller's minimal launcher
-(`src/main.zig` → `rt.monolith`). Also: `__filename` ends in `[eval]`, and script arguments don't reach `process.argv`.
+- `src/rt/jsc_engine.zig` `callHandler` / `src/rt/server_dispatch.zig:59`: a throw in `globalThis.__crullerHandle`
+  becomes `error.JSError` → `sendError(-2)`; the exception is neither reported nor cleared from the VM.
+  `sourceLoaded` does `get(…) catch return` (same), and if a script defines `__crullerHandle` it busy-polls before the
+  event loop runs.
+- Dormant: nothing in zun sends `server_request` commands (that host was cruller's QuickJS/V8 SSR path). A script that
+  happens to define `globalThis.__crullerHandle` would hang, though.
+- **Plan:** delete with `src/rt` during the CLI restore (Phase 4 item 3). Found by the RT-2 sibling search.
 
+## Fixed
+
+### RT-2: CommonJS entry errors were swallowed (exit 0, no output), fixed
+
+- Cause: `JSC::evaluate`'s 3-argument overload clears the exception into a discarded `NakedPtr`
+  (`JSCommonJSModule.cpp`, inherited from Bun 1.3.14, fixed upstream by 1.4.5), and cruller's launcher (`1a78c80`) ran
+  every entry file as `-e` eval source, which takes that path. Fixed both: the binding (backport of 1.4.5's out-param
+  pattern) and the launcher (runs the file like `bun file.js`; real `__filename`, `import.meta.dir`, `process.argv`).
+- RCA: `docs/rca/RT-2-cjs-entry-errors-swallowed.md`. Regression test: `scripts/zun-negative-controls.sh`.
+
+### RT-1: `Bun__Node__ZeroFillBuffers` type confusion, fixed
+
+- C++ reads `extern "C" bool Bun__Node__ZeroFillBuffers`; cruller (`05f7094`) defined a function with that name, so
+  C++ read a code byte. Now `export var … : bool = false` as upstream (`nm`: `b`). RCA:
+  `docs/rca/RT-1-zero-fill-buffers-type-confusion.md`. `--zero-fill-buffers` itself comes back with the CLI restore.

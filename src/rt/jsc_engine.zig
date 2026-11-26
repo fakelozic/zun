@@ -12,6 +12,9 @@ pub const JscEngine = struct {
     bridge: vm_bridge.Bridge,
     source: ?[]u8 = null,
     name: ?[]u8 = null,
+    /// Script arguments after the entry path (`process.argv.slice(2)`). Borrowed
+    /// from `bun.argv`, which lives for the whole process.
+    passthrough: []const []const u8 = &.{},
     global: ?*bun.jsc.JSGlobalObject = null,
     state: State = .created,
 
@@ -55,7 +58,9 @@ pub const JscEngine = struct {
         vm_bridge.install(&self.bridge);
         defer vm_bridge.uninstall(&self.bridge);
 
-        bun.bun_js.runSourceWithHook(self.allocator, self.source.?, self.name.?, .{
+        // zun (RT-2): run the entry from disk like `bun file.js`, not as `-e` eval
+        // source, so CJS errors, `__filename` and `process.argv` behave like Bun.
+        bun.bun_js.runEntryFile(self.allocator, self.name.?, self.passthrough, .{
             .context = self,
             .call = sourceLoaded,
         }) catch return 3;

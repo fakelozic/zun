@@ -193,6 +193,12 @@ changes don't produce a compile error. For type punning an extern struct, use
 `std.mem.bytesToValue(To, &std.mem.toBytes(value))` (works at comptime; zun wraps it as `bun.memCast`).
 On little-endian, `[N]u8` ↔ int and `@Vector(N, bool)` → `@Vector(N, u1)` → int give the same result as before.
 
+## C interop: data symbols, slices
+
+- C `extern bool flag;` needs `export var flag: bool = false;` on the Zig side (a data symbol, `nm` shows `B`).
+  An `export fn flag` compiles and links but C then reads code bytes (zun RT-1). Probe: `probes/rt2-launcher/coerce.zig`.
+- `[][:0]const u8` (e.g. `bun.argv`) coerces to `[]const []const u8` without a copy (same probe).
+
 ## Linux (`std.os.linux`)
 
 - x86_64's `fstatat` syscall is `SYS.newfstatat` (the kernel name); `fstatat64` no longer exists there.

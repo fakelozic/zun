@@ -96,10 +96,9 @@ so nothing collides with the real Bun. The global API stays `Bun.*`, so existing
 Decided 2026-11-26: config is `zunfig.toml` with `bunfig.toml` fallback; env vars `ZUN_*` first with `BUN_*` fallback (Bun's
 tests set `BUN_*`); all default dirs under `~/.zun`, never `~/.bun`; no `Zun` JS alias; no crash reports or telemetry sent to Bun's servers.
 
-> ⚠️ **Test-gate caveat (found 2026-11-26 by T4.1, reproduced by the integration owner):** cruller's launcher swallows errors thrown
-> by **CommonJS** entry files (exit 0, no output). The CJS gate tests used in Phases 1–3 (`test-path-*`, the smoke test's
-> assertions) could therefore pass falsely. `test-path-extname`/`basename` really fail when run as ESM. Crashes, ESM tests and
-> `test-zun-identity`/`test-zun-markdown` (ESM) are unaffected. Fixed next, before any other work (SEC2 Part 0); all gates are re-run after it.
+> ✅ **Test-gate caveat resolved (SEC2 Part 0, 2026-11-26):** cruller's launcher swallowed uncaught errors in **CommonJS** entry
+> files (exit 0, no output), so CJS gate tests could pass falsely. Fixed at the cause (RT-2: `docs/rca/RT-2-cjs-entry-errors-swallowed.md`),
+> all 8 gate tests re-run and pass, and `scripts/zun-negative-controls.sh` now proves the runner reports failing CJS and ESM tests as FAIL.
 
 ## Phase 4: Restore Bun 1.3.14 features (port upstream Zig to 0.17)
 
@@ -111,7 +110,7 @@ Order (decided 2026-11-26, from `docs/plan/restore-1.3.14.md`):
 
 1. ✅ **Prep:** stub inventory and CLI gates (2026-11-26: `docs/status/restore.md`, `scripts/restore-module.ts`, `bun.restore_flags`).
 2. ✅ **`md`** (`Bun.markdown`), which removes one CLI gate (2026-11-26: smoke test passes; quadratic link parsing open, `docs/security/known-issues.md` MD-1).
-   **Found:** cruller's launcher swallows uncaught errors in CJS entry files, so 2 of the 7 gate tests are false passes until item 3 (`docs/status/restore.md`).
+   **Found:** cruller's launcher swallowed uncaught errors in CJS entry files (2 of the 7 gate tests were false passes); fixed in SEC2 Part 0 (RT-2).
 3. **CLI core** (`src/cli`): real argument parsing, subcommand skeleton, compile-time gates for commands not yet restored.
 4. **Test runner** (`src/test_runner`, `bun:test`, `internal-for-testing.ts`). 1,492 of 1,790 test files need it.
 5. **`js_parser_jsc` / `Bun.Transpiler`**: parser conformance tests early.
