@@ -267,7 +267,10 @@ const Context = struct {
                 return "ERR_BROTLI_DECODER_" ++ n;
             }
         }
-        unreachable;
+        // zun (security C1): the code comes from the C library, which can return
+        // codes this enum doesn't name (v1.2.1 added -17). This used to be
+        // `unreachable`, i.e. a crash or UB on attacker-chosen input.
+        return "ERR_BROTLI_DECODER_UNKNOWN_ERROR";
     }
 };
 

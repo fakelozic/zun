@@ -115,6 +115,7 @@ pub const BROTLI_DECODER_ERROR_FORMAT_WINDOW_BITS: c_int = -13;
 pub const BROTLI_DECODER_ERROR_FORMAT_PADDING_1: c_int = -14;
 pub const BROTLI_DECODER_ERROR_FORMAT_PADDING_2: c_int = -15;
 pub const BROTLI_DECODER_ERROR_FORMAT_DISTANCE: c_int = -16;
+pub const BROTLI_DECODER_ERROR_FORMAT_BLOCK_SWITCH: c_int = -17;
 pub const BROTLI_DECODER_ERROR_COMPOUND_DICTIONARY: c_int = -18;
 pub const BROTLI_DECODER_ERROR_DICTIONARY_NOT_SET: c_int = -19;
 pub const BROTLI_DECODER_ERROR_INVALID_ARGUMENTS: c_int = -20;
@@ -125,6 +126,10 @@ pub const BROTLI_DECODER_ERROR_ALLOC_RING_BUFFER_1: c_int = -26;
 pub const BROTLI_DECODER_ERROR_ALLOC_RING_BUFFER_2: c_int = -27;
 pub const BROTLI_DECODER_ERROR_ALLOC_BLOCK_TYPE_TREES: c_int = -30;
 pub const BROTLI_DECODER_ERROR_UNREACHABLE: c_int = -31;
+/// zun (security C1): non-exhaustive (`_`). brotli v1.2.1 added -17
+/// (FORMAT_BLOCK_SWITCH, the error a crafted stream now gets), and the C library
+/// may add codes again. With an exhaustive enum an unknown code from C is
+/// illegal behaviour: a panic in safe builds, undefined in ReleaseFast.
 pub const BrotliDecoderErrorCode = enum(c_int) {
     FORMAT_EXUBERANT_NIBBLE = -1,
     FORMAT_RESERVED = -2,
@@ -142,6 +147,7 @@ pub const BrotliDecoderErrorCode = enum(c_int) {
     FORMAT_PADDING_1 = -14,
     FORMAT_PADDING_2 = -15,
     FORMAT_DISTANCE = -16,
+    FORMAT_BLOCK_SWITCH = -17,
     COMPOUND_DICTIONARY = -18,
     DICTIONARY_NOT_SET = -19,
     INVALID_ARGUMENTS = -20,
@@ -152,7 +158,9 @@ pub const BrotliDecoderErrorCode = enum(c_int) {
     ALLOC_RING_BUFFER_2 = -27,
     ALLOC_BLOCK_TYPE_TREES = -30,
     UNREACHABLE = -31,
+    _,
 };
+/// zun (security C1): non-exhaustive for the same reason as `BrotliDecoderErrorCode`.
 pub const BrotliDecoderErrorCode2 = enum(c_int) {
     NO_ERROR = 0,
     SUCCESS = 1,
@@ -174,6 +182,7 @@ pub const BrotliDecoderErrorCode2 = enum(c_int) {
     ERROR_FORMAT_PADDING_1 = -14,
     ERROR_FORMAT_PADDING_2 = -15,
     ERROR_FORMAT_DISTANCE = -16,
+    ERROR_FORMAT_BLOCK_SWITCH = -17,
     ERROR_COMPOUND_DICTIONARY = -18,
     ERROR_DICTIONARY_NOT_SET = -19,
     ERROR_INVALID_ARGUMENTS = -20,
@@ -184,6 +193,7 @@ pub const BrotliDecoderErrorCode2 = enum(c_int) {
     ERROR_ALLOC_RING_BUFFER_2 = -27,
     ERROR_ALLOC_BLOCK_TYPE_TREES = -30,
     ERROR_UNREACHABLE = -31,
+    _,
 };
 pub const BROTLI_DECODER_PARAM_DISABLE_RING_BUFFER_REALLOCATION: c_int = 0;
 pub const BROTLI_DECODER_PARAM_LARGE_WINDOW: c_int = 1;

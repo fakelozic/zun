@@ -146,7 +146,9 @@ pub const BrotliReaderArrayList = struct {
                     this.state = .Error;
                     if (comptime bun.Environment.allow_assert) {
                         const code = this.brotli.getErrorCode();
-                        bun.Output.debugWarn("Brotli error: {s} ({d})", .{ @tagName(code), @intFromEnum(code) });
+                        // zun (security C1): std.enums.tagName, not @tagName: the code may be one
+                        // the enum doesn't name, and @tagName panics on those.
+                        bun.Output.debugWarn("Brotli error: {s} ({d})", .{ std.enums.tagName(@TypeOf(code), code) orelse "unknown", @intFromEnum(code) });
                     }
 
                     return error.BrotliDecompressionError;

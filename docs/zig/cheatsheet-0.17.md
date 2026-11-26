@@ -198,6 +198,9 @@ On little-endian, `[N]u8` ↔ int and `@Vector(N, bool)` → `@Vector(N, u1)` �
 - C `extern bool flag;` needs `export var flag: bool = false;` on the Zig side (a data symbol, `nm` shows `B`).
   An `export fn flag` compiles and links but C then reads code bytes (zun RT-1). Probe: `probes/rt2-launcher/coerce.zig`.
 - `[][:0]const u8` (e.g. `bun.argv`) coerces to `[]const []const u8` without a copy (same probe).
+- Enums mirroring C values need `_` (non-exhaustive): `@enumFromInt` of an unnamed value is "invalid enum value"
+  (panic in safe builds, UB in fast). Use `std.enums.tagName(E, v)` (returns `null` for unnamed) instead of
+  `@tagName`, and `_ =>` in switches. Probe: `probes/nonexhaustive-enum/enum.zig`.
 
 ## Linux (`std.os.linux`)
 

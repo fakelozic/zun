@@ -109,3 +109,13 @@ so the copy was removed. RT-1 was the opposite kind of mistake: cruller stubbed 
 `export fn`, so C++ read instruction bytes as the flag. `export var x: bool = false;` gives a BSS data symbol
 (`nm`: `B`). Probe: `probes/rt2-launcher/coerce.zig`. **Do:** when C declares `extern T name;`, the Zig side
 must be `export var`, and check with `nm` (`T` = code, `B`/`D` = data).
+
+## 2026-11-26: a C enum in Zig must be non-exhaustive if the C side can grow it
+
+Bumping brotli to v1.2.1 (security C1) added decoder error `-17`. zun's bindings declared `BrotliDecoderErrorCode`
+as an exhaustive `enum(c_int)`, returned it straight from an `extern fn`, converted it with `@enumFromInt` and
+matched it in an `inline for` ending in `unreachable`. With the new library, the exact error a crafted stream
+produces would have been "invalid enum value" (a panic in safe builds) or undefined behaviour in ReleaseFast.
+**Do:** enums that mirror C values get a `_` member; use `std.enums.tagName(E, v) orelse "unknown"` instead of
+`@tagName`, and never end a lookup over C values in `unreachable`. Probe: `probes/nonexhaustive-enum/enum.zig`.
+When bumping a C dependency, diff its public headers for new enum values before building.
