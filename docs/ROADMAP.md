@@ -34,9 +34,13 @@ Full gap list against Bun canary, plus the task breakdown: `docs/GAP.md`.
 - [x] Compare upstream 1.3.14, cruller and 1.4.5 (sizes, what was removed, module map): `docs/study/`
 - [x] Zig 0.17 knowledge bank with verified probes and upstream docs: `docs/zig/`
 - [x] Agent setup: `AGENTS.md`, `CLAUDE.md`
-- [ ] **Checkpoint:** review the study together and settle the open questions below
+- [x] **Checkpoint:** study reviewed; strategy and Linux-only decided (2026-11-26). Remaining open questions below.
 
-## Phase 1: Bring cruller in and get it building
+## Phase 1: Bring cruller in and get it building ✅ (2026-11-26, T1)
+
+Done: cruller merged with history (`4625a1c`), `parked/rt-engines` created, Zig 0.16 debug build green in about 3 min,
+5/5 cruller tests pass, `.ts` runs directly. Found a bug: static `import` crashes debug builds (`macro_context = undefined`).
+Details: `docs/build.md`, `docs/status/baseline.md`.
 
 1. Import cruller **with its history** into this repo. Keep `LICENSE.md` attribution (Bun and cruller).
 2. Branch `parked/rt-engines` keeps `src/rt/`, `ssr-run/` and the QuickJS/V8 bits. Main drops only the QuickJS/V8 parts:
