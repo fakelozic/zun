@@ -115,17 +115,20 @@ function main() {
   }
   if (lock && lock.size !== files.length) die(`lock lists ${lock.size} files, manifest expands to ${files.length}`);
 
-  const copied: string[] = [];
+  // Decide everything before touching the tree, so a refusal leaves nothing half-copied.
+  const toCopy: string[] = [];
   for (const f of files) {
-    const src = join(up, f);
     const dst = join(ROOT, f);
     if (existsSync(dst)) {
       if (sha256(dst) === hashes.get(f)) continue; // already identical
       if (!force) die(`${f} exists here and differs from upstream (ported already?). Use --force to overwrite.`);
     }
+    toCopy.push(f);
+  }
+  for (const f of toCopy) {
+    const dst = join(ROOT, f);
     mkdirSync(dirname(dst), { recursive: true });
-    copyFileSync(src, dst);
-    copied.push(f);
+    copyFileSync(join(up, f), dst);
   }
 
   if (!lock) {
@@ -137,9 +140,10 @@ function main() {
     writeFileSync(join(ROOT, "scripts/restore", `${module}.lock`), body);
     console.log(`wrote scripts/restore/${module}.lock (${files.length} files)`);
   }
-  console.log(`copied ${copied.length} of ${files.length} files`);
+  console.log(`copied ${toCopy.length} of ${files.length} files`);
 
-  const zigFiles = copied.filter(f => f.endsWith(".zig"));
+  // fix_zig017 is idempotent, so run it on every restored file (covers interrupted earlier runs).
+  const zigFiles = files.filter(f => f.endsWith(".zig"));
   if (codemod && zigFiles.length > 0) {
     for (const extra of [[], ["--report"]]) {
       const r = spawnSync(process.execPath, [join(ROOT, "scripts/fix_zig017.ts"), ...extra, ...zigFiles], {
