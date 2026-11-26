@@ -96,8 +96,12 @@ pub const UInt31WithReserved = packed struct(u32) {
         return .{ .uint31 = value, .reserved = reserved };
     }
 
+    /// Wire layout (RFC 9113 §5.3.1, §6.3): the reserved/E bit is bit 31 and the
+    /// value is bits 0..30. Not `@bitCast`: in a packed struct the first field is
+    /// the least significant bit, so a bitcast would put `reserved` at bit 0 and
+    /// shift the value left by one.
     pub inline fn toUInt32(value: UInt31WithReserved) u32 {
-        return @bitCast(value);
+        return h2_wire.uint31WithReserved(value.uint31, value.reserved);
     }
 
     pub inline fn fromBytes(src: []const u8) UInt31WithReserved {
@@ -106,49 +110,20 @@ pub const UInt31WithReserved = packed struct(u32) {
     }
 };
 
-pub const StreamPriority = packed struct(u40) {
-    streamIdentifier: u32 = 0,
-    weight: u8 = 0,
+// Wire structs: explicit big-endian decode/encode, shared with node:http2 (H2C-1).
+pub const StreamPriority = h2_wire.StreamPriority;
+pub const FrameHeader = h2_wire.FrameHeader;
+pub const SettingsPayloadUnit = h2_wire.SettingsPayloadUnit;
 
-    pub const byteSize: usize = 5;
+/// Write one SETTINGS parameter (Identifier(16) | Value(32), big-endian).
+pub inline fn encodeSetting(dst: *[SettingsPayloadUnit.byteSize]u8, setting: SettingsType, value: u32) void {
+    (SettingsPayloadUnit{ .type = @intFromEnum(setting), .value = value }).encode(dst);
+}
 
-    pub inline fn from(dst: *StreamPriority, src: []const u8) void {
-        @memcpy(@as(*[StreamPriority.byteSize]u8, @ptrCast(dst)), src);
-        std.mem.byteSwapAllFields(StreamPriority, dst);
-    }
-};
-
-pub const FrameHeader = packed struct(u72) {
-    length: u24 = 0,
-    type: u8 = @intFromEnum(FrameType.HTTP_FRAME_SETTINGS),
-    flags: u8 = 0,
-    streamIdentifier: u32 = 0,
-
-    pub const byteSize: usize = 9;
-
-    pub inline fn from(dst: *FrameHeader, src: []const u8, offset: usize, comptime end: bool) void {
-        @memcpy(@as(*[FrameHeader.byteSize]u8, @ptrCast(dst))[offset .. src.len + offset], src);
-        if (comptime end) {
-            std.mem.byteSwapAllFields(FrameHeader, dst);
-        }
-    }
-};
-
-pub const SettingsPayloadUnit = packed struct(u48) {
-    type: u16,
-    value: u32,
-    pub const byteSize: usize = 6;
-    pub inline fn from(dst: *SettingsPayloadUnit, src: []const u8, offset: usize, comptime end: bool) void {
-        @memcpy(@as(*[SettingsPayloadUnit.byteSize]u8, @ptrCast(dst))[offset .. src.len + offset], src);
-        if (comptime end) {
-            std.mem.byteSwapAllFields(SettingsPayloadUnit, dst);
-        }
-    }
-    pub inline fn encode(dst: *[byteSize]u8, setting: SettingsType, value: u32) void {
-        std.mem.writeInt(u16, dst[0..2], @intFromEnum(setting), .big);
-        std.mem.writeInt(u32, dst[2..6], value, .big);
-    }
-};
+comptime {
+    std.debug.assert((FrameHeader{}).type == @intFromEnum(FrameType.HTTP_FRAME_SETTINGS));
+}
 
 const bun = @import("bun");
 const std = @import("std");
+const h2_wire = @import("./h2_wire.zig");

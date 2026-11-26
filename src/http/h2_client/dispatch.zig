@@ -13,9 +13,8 @@ pub fn parseFrames(session: *ClientSession, buf: []const u8) usize {
     while (true) {
         const remaining = buf[consumed..];
         if (remaining.len < wire.FrameHeader.byteSize) break;
-        var header: wire.FrameHeader = .{ .flags = 0 };
-        wire.FrameHeader.from(&header, remaining[0..wire.FrameHeader.byteSize], 0, true);
-        header.streamIdentifier = wire.UInt31WithReserved.from(header.streamIdentifier).uint31;
+        // decode() reads big-endian per field and clears the reserved bit (RFC 9113 §4.1).
+        const header = wire.FrameHeader.decode(remaining[0..wire.FrameHeader.byteSize]);
         // RFC 9113 §4.2: a frame larger than the local SETTINGS_MAX_FRAME_SIZE
         // (we never advertise above the 16384 default) is a connection
         // FRAME_SIZE_ERROR. Bounding here also caps `read_buffer` growth.
@@ -67,8 +66,7 @@ pub fn dispatchFrame(session: *ClientSession, header: wire.FrameHeader, payload:
             }
             var i: usize = 0;
             while (i + wire.SettingsPayloadUnit.byteSize <= payload.len) : (i += wire.SettingsPayloadUnit.byteSize) {
-                var unit: wire.SettingsPayloadUnit = undefined;
-                wire.SettingsPayloadUnit.from(&unit, payload[i .. i + wire.SettingsPayloadUnit.byteSize], 0, true);
+                const unit = wire.SettingsPayloadUnit.decode(payload[i..][0..wire.SettingsPayloadUnit.byteSize]);
                 switch (@as(wire.SettingsType, @enumFromInt(unit.type))) {
                     .SETTINGS_MAX_FRAME_SIZE => {
                         // RFC 9113 §6.5.2: values outside [16384, 2^24-1]

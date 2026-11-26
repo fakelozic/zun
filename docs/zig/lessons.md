@@ -155,6 +155,12 @@ implementations use it (`src/http/h2_client/ClientSession.zig`, `src/http/H2Fram
 it only shows against a real peer (Node, a browser, nginx).
 
 
+**Follow-up (H2C-1 fix):** a packed struct's **first field is bit 0**, so `@bitCast` of
+`packed struct(u32) { reserved: bool, uint31: u31 }` puts the flag at bit 0, not at bit 31 where HTTP/2's E/R bit
+lives (probe test "packed bitCast: first field is bit 0" in `probes/byteswap-packed/byteswap.zig`). The HTTP/2 wire
+structs now live in `src/http/h2_wire.zig` and have explicit `decode`/`encode` plus RFC byte tests
+(`zig test src/http/h2_wire.zig`).
+
 ## 2026-11-26: pinning a hand-written `extern struct` mirror field by field
 
 Verified on 0.17.1 (probe `probes/abi-field-check/check.zig`, used for review H1-4 in `src/picohttp_sys/picohttpparser.zig`):

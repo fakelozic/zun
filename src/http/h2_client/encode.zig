@@ -6,9 +6,9 @@ pub fn writePreface(session: *ClientSession) void {
     session.queue(wire.client_preface);
 
     var settings: [3 * wire.SettingsPayloadUnit.byteSize]u8 = undefined;
-    wire.SettingsPayloadUnit.encode(settings[0..6], .SETTINGS_ENABLE_PUSH, 0);
-    wire.SettingsPayloadUnit.encode(settings[6..12], .SETTINGS_INITIAL_WINDOW_SIZE, local_initial_window_size);
-    wire.SettingsPayloadUnit.encode(settings[12..18], .SETTINGS_MAX_HEADER_LIST_SIZE, local_max_header_list_size);
+    wire.encodeSetting(settings[0..6], .SETTINGS_ENABLE_PUSH, 0);
+    wire.encodeSetting(settings[6..12], .SETTINGS_INITIAL_WINDOW_SIZE, local_initial_window_size);
+    wire.encodeSetting(settings[12..18], .SETTINGS_MAX_HEADER_LIST_SIZE, local_max_header_list_size);
     session.writeFrame(.HTTP_FRAME_SETTINGS, 0, 0, &settings);
 
     // Connection-level window starts at 64 KiB regardless of SETTINGS;

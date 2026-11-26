@@ -158,15 +158,18 @@ rendered by a server). Review scope: `src/md/*.zig`, `src/runtime/api/MarkdownOb
   `tls.ca` over `unix:`.
 - **Plan:** one RCA per mechanism, then fixes. These need a build.
 
-### H2C-1: fetch's HTTP/2 client writes byte-reversed frame headers (functional), open
+### H2C-1: both HTTP/2 stacks write/read byte-reversed frame headers (functional): fix prepared, unverified
 
-- Every `fetch(..., {protocol: "http2"})` fails with `HTTP2ProtocolError`. Frame headers go out as the 9 bytes
-  reversed, because `std.mem.byteSwapAllFields` on the `packed struct(u72)` `FrameHeader` swaps the whole backing
-  integer in Zig 0.17.1 (`docs/zig/lessons.md`, probe `docs/zig/probes/byteswap-packed/`). The affected code is
-  `src/http/h2_client/ClientSession.zig` `writeFrame`, the read path `FrameHeader.from(..., true)`, and
-  `src/runtime/api/bun/h2_frame_parser.zig`.
-- It isn't a security hole in itself (the peer drops the connection), but it blocks testing F-4's H2 half.
-- **Plan:** RCA, then write and read header fields explicitly big-endian, with an h2 interop test against `node:http2`.
+- Every `fetch(..., {protocol: "http2"})` fails with `HTTP2ProtocolError`, and node:http2 can't talk to Node in either
+  direction. `std.mem.byteSwapAllFields` on the packed wire structs swaps the whole backing integer since Zig 0.16
+  (`docs/zig/lessons.md`). zun↔zun is symmetric, so all 163 http2 parity passes are zun↔zun only and prove nothing
+  about interoperability.
+- Also fixed: `UInt31WithReserved.toUInt32` (inherited from Bun 1.3.14) put the PRIORITY E bit at bit 0.
+- **Fix prepared** on branch `t3/fix-http2-frame-byte-order`: explicit big-endian `decode`/`encode` in
+  `src/http/h2_wire.zig`, shared by both stacks. **Not yet built or verified.** Regression tests: `zig test src/http/h2_wire.zig`
+  (passes) and `test/js/node/test/parallel/test-zun-http2-interop.mjs` (Node as the peer; fails on `snap-0a5b26b`).
+  RCA: `docs/rca/H2C-1-http2-frame-byte-order.md`.
+- After it's built, rerun F-4's `f4-h2-seq`/`f4-h2-conc` and the http2 TIMEOUTs (`misbehaving-flow-control*`).
 
 ### TLS-RESUME-1: `node:tls` never resumes sessions; fixing that must ship with re-verification (parity bug, latent security), open
 

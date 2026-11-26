@@ -213,14 +213,15 @@ pub fn queue(this: *ClientSession, bytes: []const u8) void {
 }
 
 pub fn writeFrame(this: *ClientSession, frame_type: wire.FrameType, flags: u8, stream_id: u32, payload: []const u8) void {
-    var header: wire.FrameHeader = .{
+    const header: wire.FrameHeader = .{
         .type = @intFromEnum(frame_type),
         .flags = flags,
         .streamIdentifier = stream_id,
         .length = @intCast(payload.len),
     };
-    std.mem.byteSwapAllFields(wire.FrameHeader, &header);
-    this.queue(std.mem.asBytes(&header)[0..wire.FrameHeader.byteSize]);
+    var bytes: [wire.FrameHeader.byteSize]u8 = undefined;
+    header.encode(&bytes);
+    this.queue(&bytes);
     this.queue(payload);
 }
 
