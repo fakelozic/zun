@@ -48,8 +48,9 @@ and `scripts/build/zig.ts`.
 
 ## Earlier changes (already handled by cruller's 0.16 port, but needed when restoring code from upstream 1.3.14)
 
-Code copied back from upstream Bun 1.3.14 (CLI, install, shell, test runner, css, …)
-is pre-0.15, so it needs **all** of these:
+Code copied back from upstream Bun 1.3.14 (CLI, install, shell, test runner, css, …) is
+**already on the 0.15 language** (no `usingnamespace`; it uses `std.Io.Writer` and `{f}`, verified by T5,
+`docs/plan/restore-1.3.14.md`). So it needs the **0.16 and 0.17** changes below. The 0.15 list is kept for reference:
 
 - 0.15: `usingnamespace` removed. `async`/`await` removed. "Writergate" (new `std.Io.Writer`/`Reader`, `{f}` required for format methods, format methods lose fmt/options). `ArrayList` unmanaged by default. `BoundedArray` removed. Implicit root module removed from the build.
 - 0.16: `std.Io` interface everywhere (fs, net, time, sync primitives). Juicy Main and non-global env/args. `@Type` → `@Int`/`@Struct`/…. `@cImport` deprecated. `mem.indexOf*` → `find*`, plus `cut*`. Unmanaged containers only (`ArrayHashMap` → `array_hash_map.*`). `Thread.Pool` removed. Error renames (`RenameAcrossMountPoints` → `CrossDevice`, …).

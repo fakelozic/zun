@@ -39,7 +39,8 @@ Full gap list against Bun canary, plus the task breakdown: `docs/GAP.md`.
 ## Phase 1: Bring cruller in and get it building
 
 1. Import cruller **with its history** into this repo. Keep `LICENSE.md` attribution (Bun and cruller).
-2. Branch `parked/rt-engines` keeps `src/rt/`, `ssr-run/` and the QuickJS/V8 bits. Main drops them.
+2. Branch `parked/rt-engines` keeps `src/rt/`, `ssr-run/` and the QuickJS/V8 bits. Main drops only the QuickJS/V8 parts:
+   the launcher itself depends on `src/rt` (`src/main.zig` uses `bun.rt.monolith.Runtime`), so the JSC path stays until the CLI restore replaces it.
 3. Build it **as-is on Zig 0.16** on this machine. That gives a baseline that is known to work (debug build + `scripts/runner.node.mjs` smoke tests).
 4. Write down the build steps that worked in `docs/build.md`.
 - **Checkpoint:** a green 0.16 baseline, and we understand the build pipeline (codegen → zig obj → C++ → link).
@@ -111,3 +112,7 @@ macOS first, then Windows, then FreeBSD. All three were removed by cruller, and 
    is probably a planned task between Phase 4 and Phase 5, not open-ended.
 8. Go placement: link check/lint/fmt into the `zun` binary (+28 MB, about 0.6 ms startup cost on every run, one Go runtime per process, untested signal-handler interplay with JSC) or ship a companion executable?
 9. AoT front end: choosing typescript-go for `check` does not give zun an AoT front end (canary's is built on sema's internals). Decide when AoT work starts (`docs/plan/aot.md` vs `docs/plan/tooling.md`).
+10. Phase 4 restore order: adopt T5's proposal (`docs/plan/restore-1.3.14.md`)? It differs from the list above in three moves:
+    `md` before the CLI (removes a CLI gate), `Bun.Transpiler` as step 4 (parser conformance tests early), and the shell before
+    install (70 test files use `Bun.$`). Proposed order: prep → md → CLI core → test_runner → js_parser_jsc/Transpiler → shell →
+    libarchive/Bun.Archive → patch → install → css → full bundler → standalone/macho/pe → bake DevServer; N-API and sql in parallel after the test runner.
