@@ -1,6 +1,6 @@
 # TQ-10: extra stdio `"pipe"` fds of `child_process.spawn` have two owners and get closed twice
 
-- **Status:** fix prepared (port of Bun 1.4.5 `"socket-fd"`, see "Fix (implemented)"), **not yet built or verified**
+- **Status:** **fixed and verified 2026-11-27** (port of Bun 1.4.5 `"socket-fd"`, see "Fix (implemented)"). `test-zun-spawn-extra-pipe-double-close.js` passes; `test-net-socket-constructor` no longer hits EBADF/panic and now fails only on TQ-8 (forked child launcher). The `spawn.test.ts` cases need `bun:test` (Phase 4) to run. Earlier note:
   (no build slot). Keep open until the integration owner builds it and the regression test passes.
 - **Severity:** high, security-relevant. The second `close()` happens when the GC finalizes the `Subprocess`, at an
   unpredictable time. By then the fd number has often been reused, so **zun closes an unrelated fd**: a file, a

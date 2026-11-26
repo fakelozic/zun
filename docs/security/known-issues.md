@@ -89,7 +89,7 @@ rendered by a server). Review scope: `src/md/*.zig`, `src/runtime/api/MarkdownOb
 - **Plan:** fix A (thread returns normally, port of 1.4.5) and fix B (`signal_stack_size = null` under ASAN) from
   the RCA. Regression test `test/js/node/test/parallel/test-zun-worker-thread-exit.js` (fails on 0a5b26b).
 
-### SPAWN-1 / TQ-10: extra stdio `"pipe"` fds of `child_process.spawn` closed twice (High), open, fix prepared (not built)
+### SPAWN-1 / TQ-10: extra stdio `"pipe"` fds of `child_process.spawn` closed twice (High), **fixed 2026-11-27** (built and verified)
 
 - `child_process.spawn(…, { stdio: [..., 'pipe'] })` with a slot at index ≥ 3: the parent end of the socketpair is
   owned by both the native `Subprocess` (`stdio_pipes[i] = .owned_fd`, closed in `finalizeStreams`,
