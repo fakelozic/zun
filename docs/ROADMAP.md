@@ -96,6 +96,11 @@ so nothing collides with the real Bun. The global API stays `Bun.*`, so existing
 Decided 2026-11-26: config is `zunfig.toml` with `bunfig.toml` fallback; env vars `ZUN_*` first with `BUN_*` fallback (Bun's
 tests set `BUN_*`); all default dirs under `~/.zun`, never `~/.bun`; no `Zun` JS alias; no crash reports or telemetry sent to Bun's servers.
 
+> ⚠️ **Test-gate caveat (found 2026-11-26 by T4.1, reproduced by the integration owner):** cruller's launcher swallows errors thrown
+> by **CommonJS** entry files (exit 0, no output). The CJS gate tests used in Phases 1–3 (`test-path-*`, the smoke test's
+> assertions) could therefore pass falsely. `test-path-extname`/`basename` really fail when run as ESM. Crashes, ESM tests and
+> `test-zun-identity`/`test-zun-markdown` (ESM) are unaffected. Fixed next, before any other work (SEC2 Part 0); all gates are re-run after it.
+
 ## Phase 4: Restore Bun 1.3.14 features (port upstream Zig to 0.17)
 
 The source for each feature is `bun-v1.3.14/src/<module>`. Every restored module is gated

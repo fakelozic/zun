@@ -64,3 +64,11 @@ rendered by a server). Review scope: `src/md/*.zig`, `src/runtime/api/MarkdownOb
   undefined behaviour and a silent divergence from Bun.
 - **Fix:** `export var Bun__Node__ZeroFillBuffers: bool = false;` (exactly upstream). Deferred to the CLI restore
   (item 3), which brings back the real definition and the flag. Owner decides whether to fix earlier.
+
+## RT-2 (open, High for production): CommonJS entry errors are swallowed
+
+Found by T4.1, reproduced 2026-11-26 at `c98d508`: a CJS entry file that throws (e.g. `assert.strictEqual(1, 2)` after
+`require("assert")`) makes `zun` exit **0** with **no output**. ESM files and plain top-level throws exit 1 correctly. In production,
+a CJS app that crashes at startup would look successful to a supervisor. Cause: cruller's minimal launcher
+(`src/main.zig` → `rt.monolith`). Also: `__filename` ends in `[eval]`, and script arguments don't reach `process.argv`.
+
