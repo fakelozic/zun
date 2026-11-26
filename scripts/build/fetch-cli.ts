@@ -22,10 +22,17 @@
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { constants as fsConstants, existsSync, readFileSync } from "node:fs";
+import { copyFile, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
-import { downloadWithRetry, extractTarGz, fetchPrebuilt, pinnedSha256, verifyPinnedFile } from "./download.ts";
+import {
+  downloadWithRetry,
+  extractTarGz,
+  fetchPrebuilt,
+  makePrivateDir,
+  pinnedSha256,
+  verifyPinnedFile,
+} from "./download.ts";
 import { BuildError, assert } from "./error.ts";
 import { writeIfChanged } from "./fs.ts";
 
@@ -168,34 +175,62 @@ async function fetchDep(
   }
 
   console.log(`fetching ${repo}@${commit.slice(0, 8)}`);
+  let shaToStamp: string;
 
-  // ─── Download (with cache) ───
+  // ─── Download (with cache) + verify + extract ───
+  // zun (security: supply chain, SC-2): `cache` may be shared, so its tarball is never verified or extracted in place
+  // (it could be swapped between the check and tar opening it). It is copied into a private directory (mkdtemp, 0700)
+  // with O_EXCL, and that copy is verified and extracted. The cache is only a convenience: whatever is in it is
+  // checked again on every use, and a bad entry is dropped and downloaded again.
   const urlHash = createHash("sha256").update(url).digest("hex").slice(0, 16);
   const tarballPath = join(cache, `${name}-${urlHash}.tar.gz`);
-
   await mkdir(cache, { recursive: true });
 
-  // zun: a cached tarball is verified before use; a bad one is deleted (by verifyPinnedFile) and fetched again.
-  let tarballSha: string | undefined;
-  if (existsSync(tarballPath)) {
-    try {
-      tarballSha = await verifyPinnedFile(tarballPath, url);
-    } catch (err) {
-      if (existsSync(tarballPath)) throw err;
-      console.log(`cached tarball failed verification and was removed; fetching again`);
+  const work = await makePrivateDir(join(dest, ".."));
+  try {
+    const local = join(work, "source.tar.gz");
+    let tarballSha: string | undefined;
+    if (existsSync(tarballPath)) {
+      try {
+        await copyFile(tarballPath, local, fsConstants.COPYFILE_EXCL);
+        tarballSha = await verifyPinnedFile(local, url); // deletes `local` on a mismatch
+      } catch (err) {
+        if (err instanceof BuildError && err.message.startsWith("sha256 mismatch")) {
+          console.log(`cached tarball failed verification; removing it and fetching again`);
+          await rm(tarballPath, { force: true });
+        } else if (err instanceof BuildError) {
+          throw err; // e.g. no pin: never fall back to the network for an unpinned URL
+        } else {
+          // The cache entry vanished or is unreadable (e.g. a concurrent build replaced it): just download.
+          console.log(`cached tarball unusable (${err instanceof Error ? err.message : String(err)}); fetching`);
+          await rm(local, { force: true });
+        }
+      }
     }
-  }
-  if (tarballSha === undefined) {
-    tarballSha = await downloadWithRetry(url, tarballPath, name);
-  }
+    if (tarballSha === undefined) {
+      tarballSha = await downloadWithRetry(url, local, name);
+      // Refresh the cache from the verified private copy (exclusive temp file, then rename). Best effort.
+      const cacheTmp = `${tarballPath}.${process.pid}.${Date.now().toString(36)}.partial`;
+      try {
+        await copyFile(local, cacheTmp, fsConstants.COPYFILE_EXCL);
+        await rename(cacheTmp, tarballPath);
+      } catch (err) {
+        await rm(cacheTmp, { force: true }).catch(() => {});
+        console.log(`could not update the tarball cache (${err instanceof Error ? err.message : String(err)})`);
+      }
+    }
 
-  // ─── Extract ───
-  // Wipe dest first — we don't want leftover files from a previous version.
-  await rm(dest, { recursive: true, force: true });
-  await mkdir(dest, { recursive: true });
+    // ─── Extract ───
+    // Wipe dest first — we don't want leftover files from a previous version.
+    await rm(dest, { recursive: true, force: true });
+    await mkdir(dest, { recursive: true });
 
-  // Github archives have a top-level directory <repo>-<commit>/. Strip it.
-  await extractTarGz(tarballPath, dest);
+    // Github archives have a top-level directory <repo>-<commit>/. Strip it. Reads the verified private copy.
+    await extractTarGz(local, dest);
+    shaToStamp = tarballSha;
+  } finally {
+    await rm(work, { recursive: true, force: true });
+  }
 
   // ─── Apply patches / overlays ───
   for (let i = 0; i < patches.length; i++) {
@@ -214,7 +249,7 @@ async function fetchDep(
 
   // ─── Write stamp ───
   // Written LAST — if anything above failed, no stamp means next build retries.
-  await writeFile(shaStampPath, tarballSha + "\n");
+  await writeFile(shaStampPath, shaToStamp + "\n");
   await writeFile(refPath, identity + "\n");
   console.log(`done → ${dest}`);
 }

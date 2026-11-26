@@ -9,6 +9,10 @@
 - `scripts/build/deps/sha256sums.txt` pins `<sha256>  <url>` for every download the build makes. `downloadWithRetry`
   refuses an unpinned URL **before** any network access and verifies the bytes before publishing them. A mismatch deletes
   the file and stops the build (no retry).
+- Verify and use the same bytes (SC-2): every download is written with O_EXCL into a private `mkdtemp` dir (0700) next
+  to its destination, verified there and renamed. A cached tarball is copied into a private dir and that copy is
+  verified and extracted; the shared cache is never verified or extracted in place. Prebuilts are downloaded, verified,
+  extracted and stamped in one private dir and published by one rename.
 - Cached tarballs (`fetchDep`) are re-verified when used. Extracted trees (deps and prebuilts) carry a `.sha256` stamp
   and are reused only if it equals the pin. Both the pins file (implicit input) and the stamp (implicit output) are in
   the ninja graph, so changing a pin or deleting a stamp re-runs the fetch and re-verifies.
