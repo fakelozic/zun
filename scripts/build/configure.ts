@@ -52,8 +52,8 @@ export function resolveToolchain(): Toolchain {
   // stamp, so this path will exist by the time esbuild rules fire).
   const esbuild = resolve(repoRoot, "node_modules", ".bin", host.os === "windows" ? "esbuild.exe" : "esbuild");
 
-  // zig — lives at vendor/zig/, downloaded by the zig_fetch rule.
-  // Same deal: path is deterministic, download happens at build time.
+  // zig — legacy default path only; zun requires $BUN_ZIG_PATH and emitZig()
+  // (zig.ts) uses that. Nothing downloads into vendor/zig any more (SC-4).
   const zig = resolve(repoRoot, "vendor", "zig", host.os === "windows" ? "zig.exe" : "zig");
 
   const bun = findBun(host.os);

@@ -14,7 +14,8 @@
   the ninja graph, so changing a pin or deleting a stamp re-runs the fetch and re-verifies.
 - Prefetch: only an explicit `BUN_BUILD_PREFETCH_DIR` is used (no `/opt/bun-prefetch` auto-detection), its by-url files are
   verified like downloads, and pre-extracted prefetch trees are never used (they can't be checked against a pin).
-- The oven-sh/zig download path is unpinned, so it now fails closed. zun uses `BUN_ZIG_PATH` (vanilla Zig 0.17.1).
+- The oven-sh/zig auto-download is **removed** (SC-4): configure stops unless `BUN_ZIG_PATH` is set (vanilla Zig
+  0.17.1). Previously a matching `vendor/zig/.zig-commit` stamp let an unverified tree be used.
 - Recording new pins is explicit and reviewable: `ZUN_PIN_RECORD=1` (trust on first use; cross-check, then review the diff).
 
 **Provenance of the initial pins:**
@@ -24,7 +25,7 @@
 | WebKit `bun-webkit-linux-amd64-debug-asan` | Downloaded and hashed; equals GitHub's release-asset digest (`b1384cf9…`) |
 | Other Linux x64 WebKit variants (release, lto, asan, baseline) | GitHub release-asset digests of `autobuild-5488984d…` (not yet downloaded by zun) |
 | Node headers v24.3.0 | Downloaded and hashed; equals nodejs.org `SHASUMS256.txt` (`045e9bf4…`) |
-| LLVM 21.1.8 (manual step, `docs/build.md`) | GitHub release-asset digest `b3b7f280…`; `sha256sum -c` now in the documented step |
+| LLVM 21.1.8 (manual step, `docs/build.md`) | GitHub release-asset digest `b3b7f280…`; the documented step is one `&&` chain, so `tar` runs only after `sha256sum -c` succeeds (SC-4) |
 
 **Verified:** a wrong pin stops the build with `sha256 mismatch`; a missing pin stops it before downloading; a correct pin
 is a no-op (`up to date`). Repeat by editing one line of `sha256sums.txt` and running

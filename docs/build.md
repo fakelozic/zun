@@ -9,13 +9,14 @@ What actually worked on the dev machine on 2026-11-26. Since Phase 2 the tree bu
 ```sh
 # one-time toolchain setup (all project-local, no sudo, nothing global changed)
 # Zig 0.17.1 is the machine's global default (mise); nothing to install for Zig.
-mkdir -p vendor/llvm-dl vendor/llvm-21.1.8
-curl -L -o vendor/llvm-dl/LLVM-21.1.8-Linux-X64.tar.xz \
-  https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.8/LLVM-21.1.8-Linux-X64.tar.xz
-# verify before extracting (sha256 from the GitHub release asset digest of llvmorg-21.1.8; security: supply chain)
-echo "b3b7f2801d15d50736acea3c73982994d025b01c2f035b91ae3b49d1b575732b  vendor/llvm-dl/LLVM-21.1.8-Linux-X64.tar.xz" | sha256sum -c
-tar -xJf vendor/llvm-dl/LLVM-21.1.8-Linux-X64.tar.xz -C vendor/llvm-21.1.8 --strip-components=1
-rm vendor/llvm-dl/LLVM-21.1.8-Linux-X64.tar.xz
+# LLVM: extract only if the sha256 matches (the && chain stops at the first failure; sha256 is the GitHub
+# release asset digest of llvmorg-21.1.8; security: supply chain)
+mkdir -p vendor/llvm-dl vendor/llvm-21.1.8 && \
+  curl -fL -o vendor/llvm-dl/LLVM-21.1.8-Linux-X64.tar.xz \
+    https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.8/LLVM-21.1.8-Linux-X64.tar.xz && \
+  echo "b3b7f2801d15d50736acea3c73982994d025b01c2f035b91ae3b49d1b575732b  vendor/llvm-dl/LLVM-21.1.8-Linux-X64.tar.xz" | sha256sum -c && \
+  tar -xJf vendor/llvm-dl/LLVM-21.1.8-Linux-X64.tar.xz -C vendor/llvm-21.1.8 --strip-components=1 && \
+  rm vendor/llvm-dl/LLVM-21.1.8-Linux-X64.tar.xz
 mkdir -p vendor/perl5-dl && cd vendor/perl5-dl && \
   curl -LO https://cpan.metacpan.org/authors/id/P/PJ/PJACKLAM/bignum-0.67.tar.gz && \
   echo "1c9a824ab323e3e58d9808011c10ad27589dba1202806278215012ca7f522875  bignum-0.67.tar.gz" | sha256sum -c && \
@@ -39,7 +40,7 @@ build cache defaults to `~/.zun/build-cache` (`$ZUN_INSTALL/build-cache`; `scrip
 
 | Tool | Version used | Where from | Why |
 |------|--------------|------------|-----|
-| Zig | **0.17.1** (0.16.0 until Phase 2) | global mise install, passed via `BUN_ZIG_PATH` | zun targets vanilla 0.17. Without `BUN_ZIG_PATH` the build downloads Oven's patched Zig (`ZIG_COMMIT` in `scripts/build/zig.ts`), which is wrong for this tree. Zig 0.17.1 bundles LLVM 22; the Zig object links fine with lld 21 (non-LTO) |
+| Zig | **0.17.1** (0.16.0 until Phase 2) | global mise install, passed via `BUN_ZIG_PATH` (required) | zun targets vanilla 0.17. Without `BUN_ZIG_PATH` configure stops: the inherited auto-download of Oven's patched Zig was unpinned and has been removed (SC-4). Zig 0.17.1 bundles LLVM 22; the Zig object links fine with lld 21 (non-LTO) |
 | LLVM / clang / lld | **21.1.8** | official LLVM release tarball in `vendor/llvm-21.1.8` (11 GB unpacked, 2 GB download) | `scripts/build/tools.ts` requires clang `>=21.1.0 <21.1.99`. Fedora 45 ships clang 23; its `clang21`/`lld21`/`llvm21` packages would work too but need sudo |
 | Perl `bigint` pragma | bignum 0.67 (pure Perl) | CPAN tarball in `vendor/perl5` | `src/codegen/create_hash_table` does `use bigint`. Fedora package `perl-bigint` (sudo) is the alternative. Math::BigInt 2.005 itself is already installed |
 | bun | 1.4.5 (`~/.bun/bin/bun`, the owner's install, used read-only) | existing | runs `scripts/build.ts` and ~20 codegen scripts, `bun install` for codegen deps |

@@ -1,28 +1,21 @@
 /**
  * Zig toolchain download + zig build step.
  *
- * Bun uses a FORK of zig at a pinned commit (oven-sh/zig). The compiler
- * is downloaded as a prebuilt binary from releases (same pattern as WebKit).
- * The downloaded zig includes its own stdlib (vendor/zig/lib/) — we don't
- * rely on any system zig.
+ * Bun uses a FORK of zig (oven-sh/zig) and downloaded it automatically. zun
+ * builds with vanilla Zig 0.17.1 supplied via $BUN_ZIG_PATH; the unpinned
+ * auto-download was removed (security: supply chain, SC-4).
  *
  * The zig BUILD is one big `zig build obj` invocation with ~18 -D flags.
  * Zig's own build system (build.zig) handles the per-file compilation; our
  * ninja rule just invokes it and declares the output. restat lets zig's
  * incremental compilation prune downstream when nothing changed.
- *
- * The compiler download is performed by `fetchZig()` below, invoked by
- * ninja via fetch-cli.ts.
  */
 
-import { existsSync, readFileSync, symlinkSync } from "node:fs";
-import { mkdir, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { availableParallelism, homedir } from "node:os";
 import { join, resolve } from "node:path";
 import type { Config } from "./config.ts";
-import { downloadWithRetry, extractZip, tryPrefetchExtracted } from "./download.ts";
 import { BuildError, assert } from "./error.ts";
-import { fetchCliPath } from "./fetch-cli.ts";
 import { writeIfChanged } from "./fs.ts";
 import type { Ninja } from "./ninja.ts";
 import { quote, quoteArgs } from "./shell.ts";
@@ -315,15 +308,8 @@ export function zigDownloadUrl(cfg: Config, safe: boolean): string {
 export function registerZigRules(n: Ninja, cfg: Config): void {
   const hostWin = cfg.host.os === "windows";
   const q = (p: string) => quote(p, hostWin);
-  // Zig fetch wrapped in stream.ts for the [zig] prefix alongside other
-  // dep fetches. Fast (cache hit <100ms) so pool doesn't matter.
+  // stream.ts wrapper gives zig output the [zig] prefix alongside dep fetches.
   const stream = `${cfg.jsRuntime} ${q(streamPath)} zig`;
-
-  n.rule("zig_fetch", {
-    command: `${stream} ${cfg.jsRuntime} ${q(fetchCliPath)} zig $url $dest $commit`,
-    description: "zig download compiler",
-    restat: true,
-  });
 
   // Zig build — the big one. One invocation produces bun-zig.o (or
   // bun-zig.{0..N-1}.o when codegenThreads()>1). Zig's own build system
@@ -414,41 +400,22 @@ export function emitZig(n: Ninja, cfg: Config, inputs: ZigBuildInputs): string[]
   const zigDest = zigPath(cfg);
   const zigExe = zigExecutable(cfg);
   const envOverride = process.env.BUN_ZIG_PATH;
-  if (envOverride) {
-    // User-provided compiler — no fetch edge. Validate at configure time
-    // that the path has a usable layout; commit mismatch is the user's
-    // problem. zig build will error loudly if the compiler is too old.
-    assert(existsSync(zigExe), `BUN_ZIG_PATH='${envOverride}' but no zig executable at ${zigExe}`, {
-      hint: "Point $BUN_ZIG_PATH at an extracted zig install (the dir containing zig + lib/), or unset it to use the bundled compiler",
-    });
-    assert(existsSync(resolve(zigDest, "lib")), `BUN_ZIG_PATH='${envOverride}' but no lib/ dir at ${zigDest}`, {
-      hint: "zig needs its bundled stdlib at <path>/lib/ — make sure the extract wasn't partial",
-    });
-  } else {
-    const safe = zigCompilerSafe(cfg);
-    const url = zigDownloadUrl(cfg, safe);
-    // Commit + safe go into the stamp content, so switching either retriggers.
-    const stamp = resolve(zigDest, ".zig-commit");
-
-    n.build({
-      outputs: [stamp],
-      implicitOutputs: [zigExe],
-      rule: "zig_fetch",
-      inputs: [],
-      // Only fetch-cli.ts. This file (zig.ts) has emitZig and other logic
-      // unrelated to download — editing those shouldn't re-download the
-      // compiler. The URL/commit are in the rule's vars so changing those
-      // already retriggers via ninja's command tracking.
-      implicitInputs: [fetchCliPath],
-      vars: {
-        url,
-        dest: zigDest,
-        // Safe is encoded in the commit stamp (not just URL) so the CLI
-        // can short-circuit correctly when safe doesn't change.
-        commit: `${cfg.zigCommit}${safe ? "-safe" : ""}`,
-      },
-    });
-  }
+  // zun (security: supply chain, SC-4): the compiler comes only from $BUN_ZIG_PATH (vanilla Zig 0.17.1, see
+  // docs/build.md). The inherited oven-sh/zig auto-download had no pin, and its `.zig-commit` cache short-circuit
+  // accepted an existing vendor/zig tree without verifying anything, so it was removed rather than patched.
+  assert(envOverride, "BUN_ZIG_PATH is not set", {
+    hint:
+      "zun builds with vanilla Zig 0.17.1: export BUN_ZIG_PATH=$(mise where zig@0.17.1) (docs/build.md). " +
+      "There is no automatic compiler download",
+  });
+  // User-provided compiler: no fetch edge. Validate at configure time that the path has a usable layout; zig build
+  // will error loudly if the compiler is the wrong version.
+  assert(existsSync(zigExe), `BUN_ZIG_PATH='${envOverride}' but no zig executable at ${zigExe}`, {
+    hint: "Point $BUN_ZIG_PATH at an extracted zig install (the dir containing zig + lib/)",
+  });
+  assert(existsSync(resolve(zigDest, "lib")), `BUN_ZIG_PATH='${envOverride}' but no lib/ dir at ${zigDest}`, {
+    hint: "zig needs its bundled stdlib at <path>/lib/ — make sure the extract wasn't partial",
+  });
   n.phony("zig-compiler", [zigExe]);
 
   // ─── Build ───
@@ -643,100 +610,4 @@ export function emitZigCheck(n: Ninja, cfg: Config, inputs: ZigBuildInputs): voi
     n.phony(`zig-${step}`, [stamp]);
   }
   n.blank();
-}
-
-// ───────────────────────────────────────────────────────────────────────────
-// Fetch implementation — invoked by fetch-cli.ts (which ninja calls)
-// ───────────────────────────────────────────────────────────────────────────
-
-/**
- * Download and extract the zig compiler binary.
- *
- * Idempotent: if `dest/.zig-commit` matches `commit`, exits without
- * touching anything (restat prunes).
- *
- * The zip has a single top-level dir containing {zig, lib/, doc/, ...}.
- * CMake's DownloadUrl.cmake auto-hoists single-child extractions; we do
- * the same.
- */
-export async function fetchZig(url: string, dest: string, commit: string): Promise<void> {
-  const stampPath = resolve(dest, ".zig-commit");
-
-  // Short-circuit: already at this commit?
-  if (existsSync(stampPath)) {
-    const existing = readFileSync(stampPath, "utf8").trim();
-    if (existing === commit) {
-      console.log(`up to date`);
-      return; // restat no-op
-    }
-    console.log(`commit changed (was ${existing}, now ${commit}), re-fetching`);
-  }
-
-  // Prefetch cache: pre-extracted tree with matching commit?
-  if (await tryPrefetchExtracted(dest, ".zig-commit", commit)) return;
-
-  console.log(`fetching ${url}`);
-
-  // ─── Download ───
-  const destParent = resolve(dest, "..");
-  await mkdir(destParent, { recursive: true });
-  const zipPath = `${dest}.download.zip`;
-  await downloadWithRetry(url, zipPath, "zig");
-
-  // ─── Extract ───
-  // Wipe dest first — don't want stale files from a previous version.
-  await rm(dest, { recursive: true, force: true });
-
-  // Extract to a temp dir, then find the hoistable top-level dir.
-  const extractDir = `${dest}.extract`;
-  await rm(extractDir, { recursive: true, force: true });
-  await mkdir(extractDir, { recursive: true });
-
-  // Use system unzip. Present on all platforms we support (Windows 10+
-  // has it via PowerShell Expand-Archive, but `tar` also handles .zip
-  // on bsdtar/Windows tar.exe — use that for consistency).
-  //
-  // -m: same mtime fix as tar (zip stores creation timestamps).
-  // But wait — tar doesn't handle .zip on all platforms reliably.
-  // `unzip` is more portable for .zip specifically. Check and fall back.
-  await extractZip(zipPath, extractDir);
-  await rm(zipPath, { force: true });
-
-  // Hoist: zip has one top-level dir (e.g. `zig-linux-x86_64-0.14.0-...`).
-  const entries = await readdir(extractDir);
-  assert(entries.length > 0, `zip extracted nothing: ${zipPath}`);
-  let hoistFrom: string;
-  if (entries.length === 1) {
-    hoistFrom = resolve(extractDir, entries[0]!);
-  } else {
-    // Multiple top-level entries — zip was already flat.
-    hoistFrom = extractDir;
-  }
-  await rename(hoistFrom, dest);
-  await rm(extractDir, { recursive: true, force: true });
-
-  // ─── Validate ───
-  const zigExe = resolve(dest, process.platform === "win32" ? "zig.exe" : "zig");
-  assert(existsSync(zigExe), `zig executable not found after extraction: ${zigExe}`, {
-    hint: "Archive layout may have changed",
-  });
-  assert(existsSync(resolve(dest, "lib")), `zig lib/ dir not found`, {
-    hint: "Archive may be incomplete",
-  });
-
-  // ─── Editor stability symlinks (unix) ───
-  // VSCode/neovim zig extensions want a stable `zig.exe`/`zls.exe` path
-  // even on unix (they probe for both). Create symlinks.
-  if (process.platform !== "win32") {
-    try {
-      symlinkSync("zig", resolve(dest, "zig.exe"));
-    } catch {}
-    try {
-      symlinkSync("zls", resolve(dest, "zls.exe"));
-    } catch {}
-  }
-
-  // ─── Write stamp ───
-  await writeFile(stampPath, commit + "\n");
-  console.log(`extracted to ${dest}`);
 }
