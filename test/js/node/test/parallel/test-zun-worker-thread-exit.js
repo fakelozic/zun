@@ -8,7 +8,9 @@
 // stack redzones poisoned; the pthread TSD destructors that run next on the
 // same stack then trip `stack-buffer-underflow` (or ASAN's own
 // `CHECK asan_thread.cpp:369 kCurrentStackFrameMagic`) and the process exits
-// non-zero. The three cases cover the three ways a worker ends.
+// non-zero. The cases cover every way a worker ends: drain, process.exit() at top
+// level and from a callback, uncaught error at top level and from a callback,
+// unhandled rejection, and worker.terminate() during a busy loop.
 
 const common = require('../common');
 const assert = require('assert');
@@ -38,4 +40,39 @@ function run(source) {
   assert.strictEqual(r.code, 1);
   assert.ok(r.error instanceof Error);
   assert.strictEqual(r.error.message, 'boom');
+
+  // 4. process.exit() from a callback, after 'online' (event-loop path).
+  r = await run('setTimeout(() => process.exit(4), 1);');
+  assert.strictEqual(r.code, 4);
+
+  // 5. Uncaught error thrown from a callback, after 'online': the error ends
+  //    the worker while its JS frames are live (onUnhandledRejection must not
+  //    tear the VM down in place).
+  r = await run('setTimeout(() => { throw new Error("late"); }, 1);');
+  assert.strictEqual(r.code, 1);
+  assert.ok(r.error instanceof Error);
+  assert.strictEqual(r.error.message, 'late');
+
+  // 6. Unhandled promise rejection.
+  r = await run('Promise.reject(new Error("rejected"));');
+  assert.strictEqual(r.code, 1);
+  assert.ok(r.error instanceof Error);
+  assert.strictEqual(r.error.message, 'rejected');
+
+  // 7. worker.terminate() while the worker spins in a busy loop: the
+  //    termination exception unwinds the JS frames, then the thread returns.
+  await new Promise((resolve) => {
+    const w = new Worker(`
+      require('worker_threads').parentPort.postMessage('spinning');
+      for (;;) {}
+    `, { eval: true });
+    w.on('error', common.mustNotCall());
+    w.once('message', common.mustCall(() => { w.terminate(); }));
+    w.on('exit', common.mustCall((code) => {
+      // This test is about the thread ending cleanly, not the exit-code
+      // parity of terminate() (Node reports 1), so only check that it exited.
+      assert.strictEqual(typeof code, 'number');
+      resolve();
+    }));
+  });
 })().then(common.mustCall());

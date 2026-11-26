@@ -1,7 +1,9 @@
 # TQ-3: Worker threads end with `pthread_exit` inside live C++ frames; Zig's per-thread signal stack fights ASAN's
 
-- **Status:** open. Root cause found, fix proposed below, **not built** (no build slot when this was written). Also closes
-  the investigation part of RT-3 (`docs/security/known-issues.md`).
+- **Status:** fix prepared (branch `t3/fix-worker-thread-exit`), **not yet built or verified** (no build slot).
+  Fixes A and B below are implemented as described in "Implementation"; `zig ast-check` passes on the changed Zig
+  files. The regression test fails on the unfixed snapshot `build/snap-0a5b26b/zun-debug` and passes on Node 26.
+  Also closes the investigation part of RT-3 (`docs/security/known-issues.md`).
 - **Severity:** medium, security-relevant. The two ASAN reports themselves are **not** an out-of-bounds copy (proof
   below), but they come from a real defect: every Worker thread ends by jumping out of live C++ frames, skipping
   their destructors (the worker's `JSC::VM` is never freed, its API lock is never released) and, when an uncaught error
@@ -150,7 +152,7 @@ checked whether that std attached signal stacks.
   damage is in frames that are never resumed.
 - In zun the RT-3 report was cut off on stderr after the `====` banner until `log_path` was used.
 
-## Fix (proposed, not built)
+## Fix (proposed; implemented, see "Implementation")
 
 **A. Let the Worker thread return normally** (port of Bun 1.4.5's design to `src/jsc/web_worker.zig`):
 
@@ -188,12 +190,79 @@ builds keep the per-thread alt stack, which lets the crash handler run on Zig-sp
 ASAN builds use ASAN's per-thread alt stack, which ASAN owns from creation to `munmap`. This gives the resource a
 single owner, as the crash handler already does under ASAN. It does not silence any report.
 
+## Implementation (prepared, unverified)
+
+Branch `t3/fix-worker-thread-exit`.
+
+- **A, `src/jsc/web_worker.zig`.**
+  - `threadMain`: the early-terminate path is `return this.shutdown();`. `startVM()` now returns `!bool`; `false`
+    means its first checkpoint (before the VM exists) already ran `shutdown()`, and `threadMain` returns without
+    touching `this`. Otherwise `threadMain` takes the API lock with `vm.getAPILock()` (raw `JSC__VM__getAPILock`, no
+    C++ frame stays live) and calls `spin()` directly, then returns into `std.Thread`'s trampoline.
+  - `spin()`: every exit is `return this.shutdown();`. New check after the entry point has loaded: if termination
+    was requested during top-level evaluation (`process.exit()`, `terminate()`, or an uncaught error, which now only
+    requests termination) it shuts down before `'online'`, as the old `noreturn` path did.
+  - `shutdown()`: returns `void`; `bun.exitThread()` removed.
+  - `onUnhandledRejection`: dispatches the error inside `fromJSHostCallGeneric` (the C++ throw scope in
+    `SerializedScriptValue::create` must be checked now that we return through C++ frames, as in 1.4.5), then
+    `setRequestedTerminate()` + `vm.jsc_vm.notifyNeedTermination()` and returns. The termination exception unwinds
+    the JS; `spin()` checks `hasRequestedTerminate()` after every tick and after the entry point, and `shutdown()`
+    runs the worker's `'exit'` handlers once (it clears the termination request first, as for `terminate()`).
+    Exit codes are unchanged (`uncaughtException` sets 1 before calling the handler; the default
+    unhandled-rejection path leaves the code as it was, as before).
+- **A, `src/jsc/bindings/webcore/Worker.cpp` `WebWorker__teardownJSCVM`.** The API lock is released **exactly
+  once**, here, in `~JSLockHolder`'s order: `RELEASE_ASSERT` that this thread holds it, keep a `RefPtr<JSLock>`,
+  drop every remaining `VM` reference (count-independent loop, as 1.4.5's `destroyVM`; the old code assumed two
+  derefs plus the abandoned `JSLockHolder`'s), so `~VM` runs with the lock held, then `apiLock->unlock()` (which
+  also restores the thread's `AtomStringTable`). Bun 1.4.5 instead abandons the lock together with the VM; releasing
+  it in the destructor order is what WebKit's own `JSLockHolder` does and leaves no locked `JSLock` behind.
+- **B, `src/main.zig`.** `.signal_stack_size = if (_bun.Environment.enable_asan) null else (std.Options{}).signal_stack_size`
+  (`Environment.enable_asan` = `build_options.enable_asan`, `src/bun_core/env.zig:58`).
+  Crash reporting under ASAN: `crash_handler.resetOnPosix`/`resetSegfaultHandler` return early under
+  `enable_asan`, so zun installs no SEGV handler and no alt stack there; ASAN's own SEGV handler reports stack
+  overflows on the per-thread alt stack ASAN creates in its `pthread_create` interceptor (`use_sigaltstack=1`
+  default) and on the main thread at init. So ASAN builds keep stack-overflow reports. Release builds keep std's
+  per-thread alt stack, which the crash handler relies on for Zig-spawned threads (the crash handler's own 512 KiB
+  `sigaltstack` is installed only on the thread that calls `init`).
+
+### Exit paths after the fix
+
+All paths end with `threadMain` returning. "Lock" = the API lock taken in `threadMain`.
+
+| Path | Who reaches `shutdown()` | Lock released by | VM destroyed by | Worker (`this`) freed by |
+|---|---|---|---|---|
+| Terminated before start (`threadMain` check) | `threadMain` | never taken | no VM | parent, on the close task from `dispatchExit` |
+| Terminated in `startVM` before `initWorker` | `startVM` (returns `false`) | never taken | no VM | parent, close task |
+| Terminated after `initWorker`, `configureDefines` error | `spin()` first check | `teardownJSCVM` | `teardownJSCVM` (`~VM`), then `vm.deinit()` (Zig VM) + arena | parent, close task |
+| Entry point fails to resolve or load | `spin()` | `teardownJSCVM` | same | parent, close task |
+| Normal end (event loop drains) | `spin()` after the loop | `teardownJSCVM` | same | parent, close task |
+| `process.exit(n)` in the worker | `exit()` requests termination; `spin()` loop break, or the new post-load check | `teardownJSCVM` | same | parent, close task |
+| `worker.terminate()` (busy loop too) | `notifyNeedTermination` → termination exception unwinds JS; `spin()` loop break / post-load check | `teardownJSCVM` | same | parent, close task |
+| Uncaught exception / unhandled rejection | `onUnhandledRejection` requests termination and returns; `spin()` (`!handled` branch, post-load check, or loop break) | `teardownJSCVM` | same | parent, close task |
+| Error in `startVM` (OOM, `initWorker` error) | none: `Output.panic` ends the process (unchanged) | n/a | n/a | n/a |
+
+`dispatchExit` stays the last step that touches `this`; nothing after `shutdown()` returns touches it.
+
+### Open risks (to check on the first build)
+
+- The count-independent deref loop forces `~VM` even if some C++ object still holds a `RefPtr<VM>`; 1.4.5 accepts
+  the same. The old code's actual count at teardown was not measured (gdb 17 fails on the snapshot's DWARF).
+- `flushLogs` panics on `error.JSTerminated`; it runs before `shutdown()` with the termination request still set
+  when `vm.log` has messages. Pre-existing for `terminate()`/`process.exit()`; now also reachable after an uncaught
+  error with pending log messages.
+- `VirtualMachine.uncaughtException` calls `process.exit()` then `@panic` for nested uncaught exceptions and
+  `exit_on_uncaught_exception`; in a worker `process.exit()` returns, so that `@panic` is reachable from a worker.
+  Pre-existing, unchanged by this fix; logged here.
+
 ## Regression test
 
 - `test/js/node/test/parallel/test-zun-worker-thread-exit.js`: three Workers ending by draining the event loop, by
   `process.exit(3)` and by an uncaught error, with JS-visible checks (exit codes, `'error'` event). **Fails on the
   snapshot** (`kCurrentStackFrameMagic` CHECK after the first worker, exit 1). It should pass once A and B are in.
-  It also covers B, since every Worker thread exits through `AsanThread::Destroy`.
+  It also covers B, since every Worker thread exits through `AsanThread::Destroy`. Extended with the paths that
+  run with JS frames live or after `'online'`: `process.exit()` from a timer, an uncaught error from a timer, an
+  unhandled rejection, and `terminate()` during a busy loop. Passes on Node 26; on the snapshot it still dies with
+  the `kCurrentStackFrameMagic` CHECK (exit 1).
 - Existing: `test-worker-nested-uncaught.js` and the other 46 tests in TQ-3 should move from SANITIZER/CRASH to
   their real result.
 
@@ -208,6 +277,14 @@ single owner, as the crash handler already does under ASAN. It does not silence 
   `AsanThread::Destroy`. Thread-pool, HTTP and watcher threads live for the whole process in the tests seen so far;
   any short-lived `std.Thread` would show the same `failed to deallocate 0x40000` report. Fix B covers them all.
 - `JSC__VM__holdAPILock` is also used on the main thread, where it returns normally. Fine.
+- Re-checked with the fix (2026-11-27): after A, the only `exitThread()` caller is
+  `bun.maybeHandlePanicDuringProcessReload` (`src/bun.zig:1568`), reached from the crash handler's `panic` when
+  another thread is re-`exec`ing the process. It abandons the panicking thread's frames (possibly C++) but the
+  process image is replaced right after, so nothing runs on the stale stack except TSD destructors; left as is,
+  noted here. `std.Thread.spawn` users (`HTTPThread`, `io`, `Debugger`, `fs_events`, `path_watcher`, `ThreadPool`,
+  `Watcher`, `direct_host`, `Terminal`, `process`): none ends with `pthread_exit` or a `noreturn` call from Zig;
+  `HTTPThread.processEvents` is `noreturn` only as an infinite loop for the process's life, and `process.zig`'s
+  `Global.exit` ends the process. No napi thread ends from Zig (napi threadsafe functions run on the JS thread).
 
 ## Lessons
 
