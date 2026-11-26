@@ -32,6 +32,8 @@ Full gap list against Bun canary, plus the task breakdown: `docs/GAP.md`.
   has fixed but is not stricter than upstream. So: a blocked key (C2) stays an overridable `CERT_REVOKED`, as in Bun
   and Node (review C2-1); `fetch` stays as lenient as Bun 1.4.5 on chunked trailers and framing (FETCH-2, FETCH-3).
   zun-only bugs (TLS-CA-1, TLS-ID-1, C2-2, H2C-1, …) are still fixed.
+  **This is for now:** stricter-than-upstream checks come later as their own hardening pass. Keep a list of candidates
+  in `docs/security/hardening-later.md`.
 - Prepared but unbuilt fixes live on `prep/<name>` branches and reach `bootstrap` only after a build and green gate tests.
 
 ## Security track (continuous, starts now)
