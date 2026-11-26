@@ -1154,9 +1154,19 @@ pub const Transpiler = struct {
                 };
             },
             .md => {
-                // bzrt: markdown renderer removed, treat .md as .txt
-                const str = js_ast.E.String{ .data = bun.handleOom(allocator.dupe(u8, source.contents)) };
-                const expr = js_ast.Expr.init(js_ast.E.String, str, logger.Loc.Empty);
+                const html = bun.md.renderToHtml(source.contents, allocator) catch {
+                    transpiler.log.addErrorFmt(
+                        null,
+                        logger.Loc.Empty,
+                        transpiler.allocator,
+                        "Failed to render markdown to HTML",
+                        .{},
+                    ) catch {};
+                    return null;
+                };
+                const expr = js_ast.Expr.init(js_ast.E.String, js_ast.E.String{
+                    .data = html,
+                }, logger.Loc.Empty);
                 const stmt = js_ast.Stmt.alloc(js_ast.S.ExportDefault, js_ast.S.ExportDefault{
                     .value = js_ast.StmtOrExpr{ .expr = expr },
                     .default_name = js_ast.LocRef{

@@ -259,7 +259,7 @@ pub const restore_flags = @import("./bun_core/restore_flags.zig");
 pub const validators = @import("./runtime/node/util/validators.zig");
 
 // bzrt-cut: pub const shell = @import("./shell/shell.zig");
-// bzrt-cut: pub const md = @import("./md/root.zig");
+pub const md = @import("./md/root.zig");
 
 pub const Output = @import("./bun_core/output.zig");
 pub const Global = @import("./bun_core/Global.zig");
