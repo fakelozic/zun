@@ -1,0 +1,15 @@
+# CLI core (Roadmap Phase 4 item 3, plan R2; docs/status/restore.md § cli)
+# Checkpoint (a): argument parsing, bunfig, `zun <file>` / `zun run`, -e/-p, filter/multi run.
+src/cli/cli.zig
+src/cli/Arguments.zig
+src/cli/bunfig.zig
+src/cli/run_command.zig
+src/cli/colon_list_type.zig
+src/cli/shell_completions.zig
+src/cli/list-of-yarn-commands.zig
+src/cli/filter_arg.zig
+src/cli/filter_run.zig
+src/cli/multi_run.zig
+src/cli/ci_info.zig
+src/cli/exec_command.zig
+src/cli/open.zig

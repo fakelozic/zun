@@ -1,0 +1,15 @@
+# sha256 of the upstream files restored by scripts/restore/cli.files
+# upstream: oven-sh/bun bun-v1.3.14 = 0d9b296af33f2b851fcbf4df3e9ec89751734ba4
+7e33c58bf0d54df10a93a69b5a3c0133d0c42c1d908050e8a61b08294b8d4ef3  src/cli/Arguments.zig
+a228835c9d73855f51d625749d33b20d0b40348c4fcea4e4b75c9f9d0b5cbea6  src/cli/bunfig.zig
+7e2c65f4e5bb248ff8ebacd2c9277a5d874ef57b0cead04130f55b7c63e9e9b4  src/cli/ci_info.zig
+413f07a284852d621c8edb70a86ae10cb66c1cd37245e0917cf2820b8b8e3456  src/cli/cli.zig
+a2650b15a32c9a229a6ecfb0c08b59b7bbad23729263d522d05fe97aa63629e6  src/cli/colon_list_type.zig
+fd339f1f992af925766ba799798b5c96829fac386e264cfae30165a63e2b845f  src/cli/exec_command.zig
+3238c6572103f73f26d6b8fa30da4085a5c2f0e86205205eb45d4488cf6a23cc  src/cli/filter_arg.zig
+1e0b8790ab26d1d91835840827a7de6dee7aee83cc1a51f49f5ebc815ed2b64c  src/cli/filter_run.zig
+2a33896f74de7f022de37f36c8ebdc031393bac9e1ee0e06669551cc7aaba4b5  src/cli/list-of-yarn-commands.zig
+52f0bc3c3c127aa18fe35945c34df5876b12e533994d2767f309b17483a33abd  src/cli/multi_run.zig
+652f00e722be1ae356842c9bae6fb3ee3b46097496714b1d82a816739e2004c1  src/cli/open.zig
+1dc103b87a39c96290784cd8f655b109cdef19344a6bf2994b1f47694419fe85  src/cli/run_command.zig
+f4b9da3eb7da21d0b951395cf9304a2959b68a478f46b877e059b09f14b7d317  src/cli/shell_completions.zig
