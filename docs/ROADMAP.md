@@ -75,8 +75,11 @@ restore is measured with it. Order, chosen so each step makes the next one testa
 ## Phase 5: Catch up to Bun 1.4.x
 
 1. Behaviour diff: compare 1.3.14 and 1.4.x per module (most Rust crates keep the Zig directory names; see the mapping table in `docs/study/bun-1.4.md`) and from release notes. Track it as a checklist.
-2. New tools that exist only in Rust: `zun format` (Prettier-compatible), `zun lint`, `zun check`
-   (type checker; consider using **typescript-go** directly, since Go is in our language set), React Compiler.
+2. New tools that exist only in Rust (plan: `docs/plan/tooling.md`):
+   - `zun check`: **embed typescript-go** as a Go c-archive linked into the Zig binary (T8 built a working probe: about 28 MB, output identical to `tsc`).
+   - `zun lint` and `zun fmt`: in **Go**, on the same embedded typescript-go syntax tree (zun's own parser drops types and most comments, so it can't serve them). Start by grading rslint's ~900 rules against Bun's conformance bundle.
+   - React Compiler: port to **Zig** on zun's `js_parser` tree (it waits for the bundler restore).
+   - Conformance gates come with Bun: `test/cli/{check/typescript-go,lint/conformance,format/prettier}/bundle.zst`.
 
 ## Phase 6: Language end-state (far future)
 
@@ -103,6 +106,8 @@ macOS first, then Windows, then FreeBSD. All three were removed by cruller, and 
 4. Node target version for `process.version` (Bun 1.3.14 reports 24.3.0).
 5. N-API: restore early (many npm packages need it) or in item 6 as planned?
 6. Go's role: only for tooling like typescript-go, or more?
+8. Go placement: link check/lint/fmt into the `zun` binary (+28 MB, about 0.6 ms startup cost on every run, one Go runtime per process, untested signal-handler interplay with JSC) or ship a companion executable?
+9. AoT front end: choosing typescript-go for `check` does not give zun an AoT front end (canary's is built on sema's internals). Decide when AoT work starts (`docs/plan/aot.md` vs `docs/plan/tooling.md`).
 7. JSC/WebKit upgrade policy: stay on the 1.3.14 WebKit (`5488984`) until when? Canary's WebKit (`32300d4`) is needed for
    Node 26 compatibility, `Temporal`, the C++ Web Streams and AoT (`docs/plan/runtime-diff.md`, `docs/plan/aot.md`), so the upgrade
    is probably a planned task between Phase 4 and Phase 5, not open-ended.

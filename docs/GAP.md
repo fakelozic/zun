@@ -39,7 +39,7 @@ commit for every parity check and re-baseline from time to time.
 | `compile` = `build --compile --aot` (**AoT to machine code**) | ❌ | 🦀 canary `src/aot` (291k), depends on `sema` |
 | `check` (TypeScript type checker), `check --aot` | ❌ | 🦀 `src/sema` (400k in canary; a typescript-go port) |
 | `lint` (+1,049 documented rules, plugins) | ❌ | 🦀 `src/lint` (328k) |
-| `format` (Prettier-compatible) | ❌ | 🦀 `src/format` (132k) |
+| `fmt` (Prettier-compatible; the command is `bun fmt`) | ❌ | 🦀 `src/format` (132k) |
 | `explain` (typed-percentage report for AoT) | ❌ | 🦀 `src/aot` |
 
 ## 2. Runtime APIs
