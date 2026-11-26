@@ -28,7 +28,7 @@ pub fn isEnabled() bool {
 
 /// This answers, "What parts of bun are people actually using?"
 pub const Features = struct {
-    pub var builtin_modules = std.enums.EnumSet(bun.jsc.ModuleLoader.HardcodedModule).initEmpty();
+    pub var builtin_modules = std.enums.EnumSet(bun.jsc.ModuleLoader.HardcodedModule).empty;
 
     pub var @"Bun.stderr": usize = 0;
     pub var @"Bun.stdin": usize = 0;
@@ -174,7 +174,7 @@ pub fn validateFeatureName(name: []const u8) void {
 }
 
 pub const packed_features_list = brk: {
-    const decls = std.meta.declarations(Features);
+    const decls = bun.meta.declsOf(Features);
     var names: [decls.len][:0]const u8 = undefined;
     var i = 0;
     for (decls) |decl| {

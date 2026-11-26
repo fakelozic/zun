@@ -41,6 +41,10 @@ comptime {
 
 const linux = syscall;
 
+/// The `fstatat` syscall. Zig 0.17 names it by its kernel name `newfstatat` on x86_64
+/// (0.16 called it `fstatat64` on every arch); other arches keep `fstatat64`.
+pub const fstatat_syscall: std.os.linux.SYS = if (@hasField(std.os.linux.SYS, "fstatat64")) .fstatat64 else .newfstatat;
+
 pub const sys_uv = if (Environment.isWindows) @import("./sys_uv.zig") else sys;
 
 pub const F_OK = 0;
@@ -529,7 +533,7 @@ pub fn stat(path: [:0]const u8) Maybe(bun.Stat) {
             var stat_ = mem.zeroes(KernelStat);
             const rc = if (Environment.isLinux)
                 // aarch64 linux doesn't implement a "stat" syscall. It's all fstatat.
-                linux.syscall4(.fstatat64, @as(usize, @bitCast(@as(isize, std.posix.AT.FDCWD))), @intFromPtr(path.ptr), @intFromPtr(&stat_), 0)
+                linux.syscall4(fstatat_syscall, @as(usize, @bitCast(@as(isize, std.posix.AT.FDCWD))), @intFromPtr(path.ptr), @intFromPtr(&stat_), 0)
             else
                 workaround_symbols.stat(path, &stat_);
 
@@ -852,7 +856,7 @@ pub fn fstatat(fd: bun.FD, path: [:0]const u8) Maybe(bun.Stat) {
     const fd_valid = if (fd == bun.invalid_fd) std.posix.AT.FDCWD else fd.native();
     while (true) {
         var stat_buf = mem.zeroes(KernelStat);
-        if (Maybe(bun.Stat).errnoSysFP(std.os.linux.syscall4(.fstatat64, @as(usize, @bitCast(@as(isize, fd_valid))), @intFromPtr(path.ptr), @intFromPtr(&stat_buf), 0), .fstatat, fd, path)) |err| {
+        if (Maybe(bun.Stat).errnoSysFP(std.os.linux.syscall4(fstatat_syscall, @as(usize, @bitCast(@as(isize, fd_valid))), @intFromPtr(path.ptr), @intFromPtr(&stat_buf), 0), .fstatat, fd, path)) |err| {
             if (err.getErrno() == .INTR) continue;
             log("fstatat({f}, {s}) = {s}", .{ fd, path, @tagName(err.getErrno()) });
             return err;
@@ -878,7 +882,7 @@ pub fn lstatat(fd: bun.FD, path: [:0]const u8) Maybe(bun.Stat) {
     const fd_valid = if (fd == bun.invalid_fd) std.posix.AT.FDCWD else fd.native();
     while (true) {
         var stat_buf = mem.zeroes(KernelStat);
-        if (Maybe(bun.Stat).errnoSysFP(std.os.linux.syscall4(.fstatat64, @as(usize, @bitCast(@as(isize, fd_valid))), @intFromPtr(path.ptr), @intFromPtr(&stat_buf), std.posix.AT.SYMLINK_NOFOLLOW), .fstatat, fd, path)) |err| {
+        if (Maybe(bun.Stat).errnoSysFP(std.os.linux.syscall4(fstatat_syscall, @as(usize, @bitCast(@as(isize, fd_valid))), @intFromPtr(path.ptr), @intFromPtr(&stat_buf), std.posix.AT.SYMLINK_NOFOLLOW), .fstatat, fd, path)) |err| {
             if (err.getErrno() == .INTR) continue;
             log("lstatat({f}, {s}) = {s}", .{ fd, path, @tagName(err.getErrno()) });
             return err;

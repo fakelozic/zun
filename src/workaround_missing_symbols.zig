@@ -12,7 +12,7 @@ pub const linux = struct {
 
     pub export fn stat(path: [*:0]const u8, buf: *bun.sys.KernelStat) c_int {
         // https://git.musl-libc.org/cgit/musl/tree/src/stat/stat.c
-        const rc = std.os.linux.syscall4(.fstatat64, @as(usize, @bitCast(@as(isize, std.os.linux.AT.FDCWD))), @intFromPtr(path), @intFromPtr(buf), 0);
+        const rc = std.os.linux.syscall4(bun.sys.fstatat_syscall, @as(usize, @bitCast(@as(isize, std.os.linux.AT.FDCWD))), @intFromPtr(path), @intFromPtr(buf), 0);
         return simulateLibcErrno(rc);
     }
 
@@ -23,7 +23,7 @@ pub const linux = struct {
 
     pub export fn lstat(path: [*:0]const u8, buf: *bun.sys.KernelStat) c_int {
         // https://git.musl-libc.org/cgit/musl/tree/src/stat/lstat.c
-        const rc = std.os.linux.syscall4(.fstatat64, @as(usize, @bitCast(@as(isize, std.os.linux.AT.FDCWD))), @intFromPtr(path), @intFromPtr(buf), std.os.linux.AT.SYMLINK_NOFOLLOW);
+        const rc = std.os.linux.syscall4(bun.sys.fstatat_syscall, @as(usize, @bitCast(@as(isize, std.os.linux.AT.FDCWD))), @intFromPtr(path), @intFromPtr(buf), std.os.linux.AT.SYMLINK_NOFOLLOW);
         return simulateLibcErrno(rc);
     }
 
@@ -33,7 +33,7 @@ pub const linux = struct {
     }
 
     pub export fn fstatat(dirfd: i32, path: [*:0]const u8, buf: *bun.sys.KernelStat, flags: u32) c_int {
-        const rc = std.os.linux.syscall4(.fstatat64, @as(usize, @bitCast(@as(isize, dirfd))), @intFromPtr(path), @intFromPtr(buf), flags);
+        const rc = std.os.linux.syscall4(bun.sys.fstatat_syscall, @as(usize, @bitCast(@as(isize, dirfd))), @intFromPtr(path), @intFromPtr(buf), flags);
         return simulateLibcErrno(rc);
     }
 
