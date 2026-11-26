@@ -399,6 +399,7 @@ extern "C" bool Bun__VM__useIsolationSourceProviderCache(void* bunVM);
 
 // Used in process.version
 extern "C" const char* Bun__version;
+extern "C" const char* Zun__version;
 extern "C" const char* Bun__version_with_sha;
 
 // Version exports removed - now handled by CMake-generated header (bun_dependency_versions.h)

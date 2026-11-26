@@ -214,6 +214,8 @@ static JSValue constructVersions(VM& vm, JSObject* processObject)
 
     object->putDirect(vm, JSC::Identifier::fromString(vm, "node"_s), JSC::jsOwnedString(vm, makeAtomString(ASCIILiteral::fromLiteralUnsafe(REPORTED_NODEJS_VERSION))));
     object->putDirect(vm, JSC::Identifier::fromString(vm, "bun"_s), JSC::jsOwnedString(vm, String(ASCIILiteral::fromLiteralUnsafe(Bun__version)).substring(1)));
+    // zun: its own version next to the Bun-compatible one (docs/identity.md).
+    object->putDirect(vm, JSC::Identifier::fromString(vm, "zun"_s), JSC::jsOwnedString(vm, String(ASCIILiteral::fromLiteralUnsafe(Zun__version))));
 
     // Use CMake-generated versions
     object->putDirect(vm, JSC::Identifier::fromString(vm, "boringssl"_s), JSC::jsOwnedString(vm, String(ASCIILiteral::fromLiteralUnsafe(BUN_VERSION_BORINGSSL))), 0);

@@ -65,10 +65,10 @@ pub fn main(init: std.process.Init.Minimal) void {
     // argv[1] is the pre-built entry file to run, except for the two
     // version-reporting flags the build system's own smoke test relies on.
     if (_bun.argv.len > 1 and _bun.strings.eqlComptime(_bun.argv[1], "--version")) {
-        Output.writer().writeAll(_bun.Global.package_json_version ++ "\n") catch {};
+        Output.writer().writeAll(_bun.zun.version_line ++ "\n") catch {};
         _bun.Global.exit(0);
     } else if (_bun.argv.len > 1 and _bun.strings.eqlComptime(_bun.argv[1], "--revision")) {
-        Output.writer().writeAll(_bun.Global.package_json_version_with_revision ++ "\n") catch {};
+        Output.writer().writeAll(_bun.zun.revision_line ++ "\n") catch {};
         _bun.Global.exit(0);
     } else if (_bun.argv.len > 1) {
         const entry_path = blk: {
@@ -94,7 +94,7 @@ pub fn main(init: std.process.Init.Minimal) void {
             Output.panic("Failed to run entry file: {s}\n", .{@errorName(err)});
         };
     } else {
-        Output.errGeneric("Usage: {s} path/to/script.js", .{if (_bun.argv.len > 0) _bun.argv[0] else "bun-debug"});
+        Output.errGeneric("Usage: {s} path/to/script.js", .{if (_bun.argv.len > 0) _bun.argv[0] else "zun"});
         Output.flush();
         _bun.Global.exit(1);
     }
