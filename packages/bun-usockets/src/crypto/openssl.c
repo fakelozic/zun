@@ -434,6 +434,32 @@ static int us_verify_callback(int preverify_ok, X509_STORE_CTX *ctx) {
   return 1;
 }
 
+/* zun (security C2, from Bun 1.4.5): every chain BoringSSL verifies for an SSL_CTX built here goes through
+ * X509_verify_cert and then the blocked-public-key list (blocked_spkis.cpp: the eight eMudhra intermediates whose
+ * private keys are public, GHSA-26q8-h657-pf84). A blocked key is reported the way X509_verify_cert reports its own
+ * errors: as the X509_STORE_CTX error (so SSL_get_verify_result / us_socket_verify_error see CERT_REVOKED and
+ * rejectUnauthorized rejects it), then to the SSL's verify callback, which says whether the handshake goes on.
+ * Applies to clients and servers alike (client-certificate verification), whatever CA store or `ca` option is used. */
+static int us_x509_verify_chain(X509_STORE_CTX *ctx) {
+  int ok = X509_verify_cert(ctx);
+  int error = us_x509_store_ctx_blocked_key_error(ctx);
+  if (error == X509_V_OK) return ok;
+  X509_STORE_CTX_set_error(ctx, error);
+  SSL *ssl = X509_STORE_CTX_get_ex_data(ctx, SSL_get_ex_data_X509_STORE_CTX_idx());
+  int (*verify_callback)(int, X509_STORE_CTX *) = ssl ? SSL_get_verify_callback(ssl) : NULL;
+  return verify_callback ? verify_callback(0, ctx) : 0;
+}
+
+static int us_x509_verify_chain_cb(X509_STORE_CTX *ctx, void *arg) {
+  (void)arg;
+  return us_x509_verify_chain(ctx);
+}
+
+/* quic.c's client builds its own SSL_CTX and verifies chains itself; it calls us_x509_store_ctx_blocked_key_error. */
+static void us_ssl_ctx_reject_blocked_keys(SSL_CTX *ctx) {
+  SSL_CTX_set_cert_verify_callback(ctx, us_x509_verify_chain_cb, NULL);
+}
+
 /* Drop the strdup'd passphrase. Called as soon as private-key load completes
  * (the only consumer of the passwd_cb), so the secret never outlives ctx
  * construction and SSL_CTX_free() is sufficient on every later path. Also
@@ -461,6 +487,8 @@ SSL_CTX *us_ssl_ctx_build_raw(struct us_bun_socket_context_options_t options,
 
   SSL_CTX *ssl_context = SSL_CTX_new(TLS_method());
   atomic_fetch_add(&ssl_ctx_live, 1);
+  /* zun (security C2): chain verification always includes the blocked-key check. */
+  us_ssl_ctx_reject_blocked_keys(ssl_context);
   /* Register the live-count free_func first thing so every exit (including
    * build_fail) balances. The packed reneg policy reuses the same slot. */
   SSL_CTX_set_ex_data(ssl_context, us_ssl_ctx_ex_idx(), NULL);

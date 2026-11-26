@@ -10,6 +10,8 @@
 #include <openssl/ssl.h>
 #include <openssl/x509.h>
 #include <openssl/x509v3.h>
+/* zun (security C2): blocked_spkis.cpp */
+extern int us_x509_store_ctx_blocked_key_error(X509_STORE_CTX *ctx);
 
 #include <errno.h>
 #include <stdlib.h>
@@ -1095,6 +1097,8 @@ static enum ssl_verify_result_t us_quic_client_verify(SSL *ssl, uint8_t *out_ale
     if (X509_STORE_CTX_init(vctx, store, leaf, chain) == 1) {
         X509_STORE_CTX_set_default(vctx, "ssl_server");
         ok = X509_verify_cert(vctx) == 1;
+        /* zun (security C2): reject chains holding a blocked public key (blocked_spkis.cpp), as the TCP client does. */
+        if (us_x509_store_ctx_blocked_key_error(vctx) != X509_V_OK) ok = 0;
     }
     X509_STORE_CTX_free(vctx);
     if (!ok) return ssl_verify_invalid;

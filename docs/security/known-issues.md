@@ -92,3 +92,17 @@ rendered by a server). Review scope: `src/md/*.zig`, `src/runtime/api/MarkdownOb
 - C++ reads `extern "C" bool Bun__Node__ZeroFillBuffers`; cruller (`05f7094`) defined a function with that name, so
   C++ read a code byte. Now `export var … : bool = false` as upstream (`nm`: `b`). RCA:
   `docs/rca/RT-1-zero-fill-buffers-type-confusion.md`. `--zero-fill-buffers` itself comes back with the CLI restore.
+
+## FETCH-1 (open, High): fetch drops per-request TLS options
+
+`fetch(url, { tls: { ca } })` trusts the public roots instead of (only) `ca`; mTLS client certs are likely not sent; TLS
+errors surface as `FetchHostFailure fetching ""`. Cause: cruller's rt host bridge (`src/rt/http_wire.zig`) has no TLS fields.
+**Until fixed: don't rely on `fetch`'s `tls` options for security. Use `node:https`/`node:tls` with `ca`, or
+`NODE_EXTRA_CA_CERTS`.** RCA: `docs/rca/FETCH-1-fetch-bridge-drops-tls-config.md`.
+
+## TLS-2 (hazard, Low): dead accept-all TLS context
+
+`src/boringssl/boringssl.zig` `initClient()` creates an `SSL_CTX` whose custom verify accepts every certificate
+(`noop_custom_verify`). No callers in zun or upstream 1.3.14, so it's never compiled (Zig only analyzes referenced code).
+Delete it or make it verify properly before anything calls it.
+
