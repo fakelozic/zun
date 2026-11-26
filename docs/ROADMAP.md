@@ -36,8 +36,8 @@ Details: `docs/security/`.
 
 **Progress (2026-11-26):** RT-1/RT-2 (launcher) fixed with RCAs. Backports **C1** (brotli RCE), **C2** (NSS 3.131.1 + blocked
 eMudhra keys), **H1** (strict chunked decoding; ABI-drift RCA), **H8** (c-ares) done. **Supply chain:** every build download
-pinned by sha256 and verified, including cached and extracted copies. **Open and important:** **FETCH-1**, `fetch` ignores per-request
-`tls` options (cruller's rt bridge); fix together with TQ-1 by restoring upstream's direct fetch path. Remaining Highs H2–H7, H9.
+pinned by sha256 and verified, including cached and extracted copies. **FETCH-1** (fetch ignored per-request
+`tls` options; cruller's rt bridge) and **TQ-1** (fetch didn't stream) fixed by restoring the direct fetch path. Remaining Highs H2–H7, H9.
 
 1. **Dependency audit (now):** list every pinned native dependency and the vulnerabilities fixed upstream after
    zun's pinned version (WebKit/JSC, BoringSSL, uSockets/uWS, picohttpparser, lsquic, c-ares, zlib, zstd, brotli,

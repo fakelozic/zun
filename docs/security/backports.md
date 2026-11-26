@@ -165,5 +165,5 @@ So engine CVEs are **High as a class, but rarely network-reachable**. That is wh
 
 | ID | Issue | Status |
 |----|-------|--------|
-| **FETCH-1** | High. `fetch` ignores per-request TLS options (`tls.ca`, likely `cert`/`key`/`checkServerIdentity`) and loses TLS error codes, because cruller's rt host bridge doesn't serialize them. With a pinned private CA, any publicly trusted certificate is accepted. RCA `docs/rca/FETCH-1-fetch-bridge-drops-tls-config.md` | **open**: fix by restoring upstream's direct fetch path (with TQ-1) |
+| **FETCH-1** | High. `fetch` ignores per-request TLS options (`tls.ca`, likely `cert`/`key`/`checkServerIdentity`) and loses TLS error codes, because cruller's rt host bridge doesn't serialize them. With a pinned private CA, any publicly trusted certificate is accepted. RCA `docs/rca/FETCH-1-fetch-bridge-drops-tls-config.md` | **fixed** (`security: FETCH-1` commit; direct fetch path restored; tests `test-zun-fetch-tls-options.mjs`, `test-zun-fetch-streaming.mjs`) |
 

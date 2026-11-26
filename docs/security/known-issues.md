@@ -93,12 +93,11 @@ rendered by a server). Review scope: `src/md/*.zig`, `src/runtime/api/MarkdownOb
   C++ read a code byte. Now `export var … : bool = false` as upstream (`nm`: `b`). RCA:
   `docs/rca/RT-1-zero-fill-buffers-type-confusion.md`. `--zero-fill-buffers` itself comes back with the CLI restore.
 
-## FETCH-1 (open, High): fetch drops per-request TLS options
+## FETCH-1 (fixed 2026-11-26, was High): fetch dropped per-request TLS options
 
 `fetch(url, { tls: { ca } })` trusts the public roots instead of (only) `ca`; mTLS client certs are likely not sent; TLS
 errors surface as `FetchHostFailure fetching ""`. Cause: cruller's rt host bridge (`src/rt/http_wire.zig`) has no TLS fields.
-**Until fixed: don't rely on `fetch`'s `tls` options for security. Use `node:https`/`node:tls` with `ca`, or
-`NODE_EXTRA_CA_CERTS`.** RCA: `docs/rca/FETCH-1-fetch-bridge-drops-tls-config.md`.
+Fixed by restoring the direct fetch path (also fixes TQ-1, streaming). RCA: `docs/rca/FETCH-1-fetch-bridge-drops-tls-config.md`.
 
 ## TLS-2 (hazard, Low): dead accept-all TLS context
 

@@ -31,9 +31,7 @@ assert.deepStrictEqual(control.tls, { ok: true, authorized: true });
 for (const which of ["intermediate", "leaf"]) {
   const r = runClient(spki[which]);
   assert.strictEqual(r.fetch.ok, false, `fetch accepted a chain with a blocked ${which} key`);
-  // The control run differs only by the blocked key, so this rejection is the blocklist's. fetch should also report
-  // CERT_REVOKED, but the rt host bridge drops the TLS error detail (FETCH-1); tighten this when FETCH-1 is fixed.
-  assert.match(`${r.fetch.code} ${r.fetch.message}`, /CERT_REVOKED|revoked|FetchHostFailure/i, `fetch (${which}): ${JSON.stringify(r.fetch)}`);
+  assert.match(`${r.fetch.code} ${r.fetch.message}`, /CERT_REVOKED|revoked/i, `fetch (${which}): ${JSON.stringify(r.fetch)}`);
   assert.strictEqual(r.tls.ok, false, `node:tls accepted a chain with a blocked ${which} key`);
   assert.match(`${r.tls.code} ${r.tls.message}`, /CERT_REVOKED|revoked/i, `tls (${which}): ${JSON.stringify(r.tls)}`);
 }

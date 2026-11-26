@@ -1,7 +1,6 @@
 # FETCH-1: fetch drops per-request TLS options (and TLS error detail) on cruller's rt host bridge
 
-- **Status:** **open**. Root cause known; the fix is to put `fetch` back on upstream's direct HTTP client path
-  (same work as triage TQ-1, fetch streaming). Not patched here on purpose (AGENTS.md rule 7).
+- **Status:** **fixed** in the `security: FETCH-1` commit (same commit fixes triage **TQ-1**, fetch didn't stream).
 - **Severity:** **High, security-relevant**
 - **Found by / date:** integration owner while testing C2, 2026-11-26
 
@@ -40,17 +39,27 @@ generic `FetchHostFailure`.
 No test used `fetch` with per-request TLS options; cruller's smoke test uses plain HTTP. The bridge was an MVP for
 the multi-engine experiment, and its wire format only carried what the SSR workload used.
 
-## Fix (planned, not done)
-Don't extend the wire format. That would keep a second, partial copy of the HTTP client's request model. Put `fetch` back on
-upstream Bun 1.3.14's direct `AsyncHTTP`/`HTTPClient` path (which takes `tls_props` and reports `certificate_info` /
-error codes), and remove the bridge from `fetch` (and from `event_loop.zig`'s polling) once nothing else uses it.
-This is the same change TQ-1 (fetch doesn't stream) needs. Do both in one task with one RCA update.
+## Fix
+Not by extending the wire format (that would keep a second, partial copy of the HTTP client's request model), but by
+**removing the bridge from `fetch`**. `src/runtime/webcore/fetch/FetchTasklet.zig` is restored to its pre-bridge form
+(cruller `a1c009d`, which is upstream 1.3.14 already ported to Zig 0.16), then run through `scripts/fix_zig017.ts` plus
+the one manual 0.17 change (`ArrayList` literals need `.pointer_stability`, 6 sites). `FetchTasklet` again drives
+`AsyncHTTP` on the HTTP thread with `tls_props`, streams response bodies as they arrive, applies request-body
+backpressure (`onWriteRequestDataDrain` / `resumeRequestDataStream`) and reports real TLS error codes. No other file used
+the bridge for HTTP. The bridge itself (`src/rt`, polled from `event_loop.zig`) stays for cruller's `rt` runtime and is
+now idle for fetch; removing `src/rt` is a separate cleanup.
 
-## Regression tests (to add with the fix)
-- `fetch` with `tls: { ca: <test root> }` to a server using the `zun-blocked-spki` fixture chain → 200.
-- `fetch` with a bogus `tls.ca` to a server whose cert chains to a *different* root → rejects.
-- `fetch` to a chain with a blocked key → error code `CERT_REVOKED` (tighten `test-zun-tls-blocked-spki.mjs`).
-- mTLS: server with `requestCert` + `ca`, client `fetch` with `tls.cert/key` → 200; without → rejected.
+Verified against Bun 1.4.5 on the same probes: private `tls.ca` works; a bogus `tls.ca` rejects `https://example.com`
+(`FailedToOpenSocket`, as Bun 1.4.5); a blocked key surfaces as `CERT_REVOKED`; a 12.5 MiB streamed request body arrives
+intact; `checkServerIdentity` is called and enforced; responses stream before the body completes.
+
+## Regression tests
+- `test-zun-fetch-tls-options.mjs`: pinned `tls.ca` → 200; unrelated `tls.ca` → rejected with a real TLS error (not
+  `FetchHostFailure`); no CA → rejected; `rejectUnauthorized: false` → 200. Fails on the pre-fix build.
+- `test-zun-fetch-streaming.mjs`: the server holds the rest of the body until the client has read the first chunk; a
+  buffering fetch deadlocks (guarded). Fails on the pre-fix build, passes on the fix and on Bun 1.4.5.
+- `test-zun-tls-blocked-spki.mjs`: now requires `CERT_REVOKED` from fetch too.
+- **Still open:** an mTLS test (server `requestCert` + `ca`; fetch with `tls.cert/key` → 200, without → rejected).
 
 ## Sibling search
 - Other request options that live on the tasklet but not in `http_wire.Request`: audit when fixing (e.g. `verbose`,

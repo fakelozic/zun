@@ -19,8 +19,8 @@ const server = Bun.serve({
 
 const result = {};
 try {
-  // fetch trusts the test root through NODE_EXTRA_CA_CERTS (set by the parent), not `tls: { ca }`: zun's fetch currently
-  // drops per-request TLS options (open bug FETCH-1, docs/rca/FETCH-1-fetch-bridge-drops-tls-config.md).
+  // fetch trusts the test root through NODE_EXTRA_CA_CERTS (set by the parent), so the default-context path is covered;
+  // test-zun-fetch-tls-options.mjs covers `tls: { ca }`.
   const res = await fetch(`https://localhost:${server.port}/`);
   result.fetch = { ok: true, body: await res.text() };
 } catch (err) {
