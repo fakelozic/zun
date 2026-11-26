@@ -23,7 +23,11 @@
 
 **Limits (verified 2026-11-26, `review-2026-11-26-verify-C2.md`):** the blocklist is an *overridable* `CERT_REVOKED`,
 as in Bun 1.4.5 and Node. With `rejectUnauthorized:false` a blocked chain still connects (`authorizationError:
-"CERT_REVOKED"`). The HTTP/3 server does **not** enforce client-certificate verification at all (C2-2, under H3).
+"CERT_REVOKED"`). The HTTP/3 server does **not** enforce client-certificate verification at all (C2-2, under H3;
+fix prepared on branch `fix/c2-2`, unverified).
+**Rule:** `us_verify_callback` always returns 1 and only records the verdict, so every listener built on
+`us_ssl_ctx_build_raw` must read `SSL_get_verify_result` itself before it dispatches. TCP `Bun.serve` does this in
+`HttpContext.h` `onHandshake`, and the QUIC server in `quic.c` `us_quic_server_peer_verified`.
 **Decided 2026-11-26:** keep it overridable, matching Bun and Node (see ROADMAP decisions).
 
 | Path | How |

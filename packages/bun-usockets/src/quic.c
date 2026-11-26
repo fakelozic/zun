@@ -29,6 +29,7 @@ extern SSL_CTX *us_ssl_ctx_build_raw(
     struct us_bun_socket_context_options_t options,
     enum create_bun_socket_error_t *err);
 extern X509_STORE *us_get_default_ca_store(void);
+extern struct us_bun_verify_error_t us_ssl_socket_verify_error_from_ssl(SSL *ssl);
 
 #define US_QUIC_READ_BUF (16 * 1024)
 
@@ -46,6 +47,8 @@ struct us_quic_hset {
 struct us_quic_sni {
     char *name;
     SSL_CTX *ctx;
+    /* zun (security C2-2): this serverName's requestCert && rejectUnauthorized. */
+    int reject_unauthorized;
 };
 
 struct us_quic_socket_context_s {
@@ -58,6 +61,11 @@ struct us_quic_socket_context_s {
     int processing;
     int closing;
     int is_client;
+    /* zun (security C2-2), server only: the default context's requestCert &&
+     * rejectUnauthorized. A connection whose client certificate failed
+     * verification is closed before it can open a stream (us_quic_on_new_conn),
+     * like the TCP path (HttpContext.h onHandshake). */
+    int reject_unauthorized;
     unsigned int conn_count;
     unsigned int conn_ext_size;
     /* Stream bytes written since the last process_conns. Once this exceeds
@@ -476,9 +484,32 @@ static void us_quic_hsi_discard(void *hset_p) {
 
 /* ───── stream interface ───── */
 
+/* zun (security C2-2), port of Bun 1.4.5 quic.c us_quic_server_peer_verified.
+ * The server SSL_CTX uses us_verify_callback, which always returns 1, so the
+ * handshake completes even when the client certificate failed verification
+ * (untrusted chain, blocked key): the verdict is only recorded on the SSL.
+ * Enforce it here when the default context or the SNI-selected one has
+ * requestCert && rejectUnauthorized. lsquic calls on_new_conn for a server
+ * connection right after the handshake and before any application packet is
+ * processed, and a closing connection ignores STREAM frames, so no request
+ * from a rejected client reaches the handler. */
+static int us_quic_server_peer_verified(us_quic_socket_context_t *ctx, lsquic_conn_t *conn) {
+    SSL *ssl = lsquic_conn_get_ssl(conn);
+    int enforce = ctx->reject_unauthorized;
+    if (!enforce && ssl) {
+        SSL_CTX *selected = SSL_get_SSL_CTX(ssl);
+        for (unsigned i = 0; i < ctx->sni_count; i++) {
+            if (ctx->sni[i].ctx == selected) { enforce = ctx->sni[i].reject_unauthorized; break; }
+        }
+    }
+    if (!enforce) return 1;
+    if (!ssl) return 0;
+    return us_ssl_socket_verify_error_from_ssl(ssl).error == 0;
+}
+
 static lsquic_conn_ctx_t *us_quic_on_new_conn(void *if_ctx, lsquic_conn_t *conn) {
     us_quic_socket_context_t *ctx = (us_quic_socket_context_t *) if_ctx;
-    if (ctx->closing) {
+    if (ctx->closing || (!ctx->is_client && !us_quic_server_peer_verified(ctx, conn))) {
         lsquic_conn_close(conn);
         return NULL;
     }
@@ -680,6 +711,7 @@ us_quic_socket_context_t *us_create_quic_socket_context(
     if (!ctx) { SSL_CTX_free(ssl); return NULL; }
     ctx->loop = loop;
     ctx->ssl_ctx = ssl;
+    ctx->reject_unauthorized = options.request_cert && options.reject_unauthorized;
 
     lsquic_engine_init_settings(&ctx->settings, LSENG_HTTP_SERVER);
     ctx->settings.es_versions = LSQUIC_DF_VERSIONS & LSQUIC_IETF_VERSIONS;
@@ -744,6 +776,7 @@ int us_quic_socket_context_add_server_name(us_quic_socket_context_t *ctx,
     if (!name) { SSL_CTX_free(ssl); return -1; }
     ctx->sni[ctx->sni_count].name = name;
     ctx->sni[ctx->sni_count].ctx = ssl;
+    ctx->sni[ctx->sni_count].reject_unauthorized = options.request_cert && options.reject_unauthorized;
     ctx->sni_count++;
     return 0;
 }

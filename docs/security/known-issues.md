@@ -190,6 +190,27 @@ The patch reuses c-ares formatting and reads complete endpoint sockaddrs.
   RCA: `docs/rca/H2C-1-http2-frame-byte-order.md`.
 - After it's built, rerun F-4's `f4-h2-seq`/`f4-h2-conc` and the http2 TIMEOUTs (`misbehaving-flow-control*`).
 
+### C2-2: `Bun.serve({ http3: true })` ignores client-certificate verification (High), fix prepared (branch `fix/c2-2`), unverified
+
+- A strict-mTLS HTTP/3 listener (`requestCert` + `rejectUnauthorized` + `ca`) runs the handler for clients whose
+  certificate failed verification (untrusted, self-signed, blocked key). TCP on the same port rejects them, and so
+  does Bun 1.4.5 over HTTP/3. Source: `review-2026-11-26-verify-C2.md` (C2-2), backports H3.
+- **Until fixed:** don't rely on mTLS with `http3: true`.
+- **Fix prepared, not yet built or verified (2026-11-27):** branch `fix/c2-2`. It ports 1.4.5's
+  `us_quic_server_peer_verified` plus an lsquic accessor patch. RCA `docs/rca/C2-2-http3-mtls-not-enforced.md`,
+  test `test-zun-http3-mtls.mjs` (fails on `snap-ffd9f0b`, passes on Bun 1.4.5; skipped without an HTTP/3 curl).
+
+### C2-2-SIB-a: no per-`serverName` session partitioning or client-cert policy (Medium), open
+
+- zun sets no TLS session-id context on any server `SSL_CTX` (TCP or QUIC). So a session issued under one
+  `serverName` entry can be resumed under another, which skips client authentication against the second entry's
+  `ca`. A per-entry `requestCert`/`rejectUnauthorized` also isn't applied on the SNI switch. Bun 1.4.5 fixed both
+  with `us_ssl_ctx_set_sni_policy` (`openssl.c:3196-3243`).
+- Related: `us_internal_verify_peer_certificate` treats "TLS 1.3 resumed, no peer certificate" as verified. 1.4.5
+  dropped that branch.
+- Matters only for servers with several `tls` entries that use mTLS. Plan: backport `us_ssl_ctx_set_sni_policy` and
+  the `verify_peer_certificate` change together, with a resumption test. See the RCA for C2-2, sibling search.
+
 ### TLS-RESUME-1: `node:tls` never resumes sessions; fixing that must ship with re-verification (parity bug, latent security), open
 
 `tls.connect({ session })` never calls `setSession`, so `isSessionReused` is always false (Node and Bun 1.4.5 resume

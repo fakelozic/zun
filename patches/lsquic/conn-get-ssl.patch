@@ -1,0 +1,60 @@
+zun (security C2-2): lsquic_conn_get_ssl, so the HTTP/3 server can read the client-certificate verify result in on_new_conn.
+The accessor subset of Bun 1.4.5's patches/lsquic/node-quic-accessors.patch (lsquic_conn_get_ssl + lsquic_enc_sess_ietf_get_ssl).
+
+--- a/include/lsquic.h
++++ b/include/lsquic.h
+@@ -2323,6 +2323,15 @@
+ lsquic_conn_t *
+ lsquic_ssl_to_conn (const struct ssl_st *);
+ 
++/**
++ * Per-connection SSL object (IETF QUIC only). Returns NULL for gQUIC, before
++ * the encryption session is set up, or after lsquic dropped the SSL object
++ * (handshake confirmed). zun/bun: the server reads the client-certificate
++ * verify result from it in on_new_conn.
++ */
++struct ssl_st *
++lsquic_conn_get_ssl (const lsquic_conn_t *);
++
+ /* Return session resumption information that can be used on subsequenct
+  * connection as argument to lsquic_engine_connect().  Call from inside
+  * SSL's new session callback.
+--- a/src/liblsquic/lsquic_conn.c
++++ b/src/liblsquic/lsquic_conn.c
+@@ -138,6 +138,18 @@
+ }
+ 
+ 
++/* zun/bun: see lsquic_enc_sess_ietf_get_ssl. */
++extern struct ssl_st *lsquic_enc_sess_ietf_get_ssl(enc_session_t *);
++
++struct ssl_st *
++lsquic_conn_get_ssl (const struct lsquic_conn *lconn)
++{
++    if (lconn->cn_enc_session && (lconn->cn_flags & LSCONN_IETF))
++        return lsquic_enc_sess_ietf_get_ssl(lconn->cn_enc_session);
++    return NULL;
++}
++
++
+ void
+ lsquic_conn_make_stream (struct lsquic_conn *lconn)
+ {
+--- a/src/liblsquic/lsquic_enc_sess_ietf.c
++++ b/src/liblsquic/lsquic_enc_sess_ietf.c
+@@ -2589,6 +2589,15 @@
+ }
+ 
+ 
++/* zun/bun: the connection's SSL object, or NULL once dropped. */
++struct ssl_st *
++lsquic_enc_sess_ietf_get_ssl (enc_session_t *enc_session_p)
++{
++    struct enc_sess_iquic *const enc_sess = enc_session_p;
++    return enc_sess ? enc_sess->esi_ssl : NULL;
++}
++
++
+ static struct stack_st_X509 *
+ iquic_esf_get_server_cert_chain (enc_session_t *enc_session_p)
+ {

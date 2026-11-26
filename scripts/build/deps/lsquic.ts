@@ -106,6 +106,8 @@ export const lsquic: Dependency = {
     "patches/lsquic/allow-no-sni.patch",
     "patches/lsquic/skip-priority-walk.patch",
     "patches/lsquic/disable-gquic.patch",
+    // zun (security C2-2): lsquic_conn_get_ssl for the HTTP/3 client-certificate check in quic.c.
+    "patches/lsquic/conn-get-ssl.patch",
   ],
 
   fetchDeps: ["zlib", "lshpack", "lsqpack", "boringssl"],
