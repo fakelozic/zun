@@ -9,8 +9,10 @@ Cruller ported it to vanilla **0.16**. **Zun is on 0.17.1 since Phase 2** (2026-
 Every mechanical 0.16 → 0.17 rewrite used in the port lives in one script, so code restored from Bun 1.3.14
 goes through the same steps. Order for restored code:
 
-1. cruller's `scripts/fix_zig016_*.py` (0.15 → 0.16), then
-2. `bun scripts/fix_zig017.ts <paths>` (0.16 → 0.17), then
+1. `bun scripts/restore-module.ts --from=<bun-v1.3.14> <module>` copies the files and runs step 2 for you
+   (`docs/status/restore.md`). Cruller's `scripts/fix_zig016_*.py` are per-file replacements for files zun
+   already has, so they do nothing on restored code; use them only as worked examples. Then
+2. `bun scripts/fix_zig017.ts <paths>` (0.16 → 0.17, plus Oven-fork syntax such as `#field`), then
 3. `bun scripts/fix_zig017.ts --report <paths>` and `bun scripts/zig017_audit_hasdecl.ts <paths>`, then
 4. compile and fix the rest by hand (the list below says what to expect).
 
@@ -28,6 +30,8 @@ It masks comments, strings and `\\` lines, so it only rewrites code, and a secon
 |------|---------|
 | `array-mul` | `[_]T{x} ** n` → `@splat(x)` when the declaration has a type, else `@as([n]T, @splat(x))`; `.{x} ** n` → `@splat(x)`; `"s" ** n` → `bun.strings.repeatComptime("s", n)`. Multi-element arrays and `x ** if (…)` are left (reported) |
 | `void-init` | `void{}` → `{}` |
+| `private-field` | `#name` → `priv_name` (Oven Zig-fork private fields, used by Bun 1.3.14; cruller's naming). `--report` lists `"#name"` strings (`private-field-string`) |
+| `arraylist-empty` | `std.ArrayList[Aligned][Unmanaged](T) = .{}` and `…(T){}` → `.empty` (type argument matched with balanced parens). Untyped `.list = .{}` and `@memset(lists, .{})` stay manual |
 | `stack-fallback` | `std.heap.stackFallback(` / `StackFallbackAllocator(` → `bun.allocators.*` (0.16's implementation, same fields) |
 | `alloc-print` | `std.fmt.allocPrint(a, f, x)` → `a.print(f, x)`, `allocPrintSentinel` → `a.printSentinel` |
 | `dupe-z` | `a.dupeZ(T, s)` → `a.dupeSentinel(T, s, 0)` |

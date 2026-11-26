@@ -292,6 +292,18 @@ const arrayMul: Rule = {
 
 const voidInit = regexRule("void-init", "`void{}` -> `{}`", /\bvoid\{\}/, () => "{}");
 
+/**
+ * `#name` private fields are an Oven Zig-fork extension (Bun 1.3.14 uses them); vanilla Zig has
+ * none. Cruller's convention, kept here: `#name` -> `priv_name` (decl, `.#name` access, `.#name =` init).
+ * `@field(x, "#name")` strings are not rewritten; `--report` lists them (private-field-string).
+ */
+const privateField = regexRule(
+  "private-field",
+  "`#name` (Oven Zig private field) -> `priv_name`",
+  /#([A-Za-z_][A-Za-z0-9_]*)/,
+  m => `priv_${m[1]}`,
+);
+
 const stackFallback = regexRule(
   "stack-fallback",
   "std.heap.stackFallback/StackFallbackAllocator -> bun.allocators.* (0.16 shape kept)",
@@ -499,9 +511,51 @@ const reflection: Rule = {
   },
 };
 
+/**
+ * `std.ArrayList(T)` / `std.ArrayListUnmanaged(T)` has a `pointer_stability` field with no default in 0.17,
+ * so `.{}` no longer initialises it:
+ *   `x: std.ArrayListUnmanaged(T) = .{}` -> `= .empty`
+ *   `std.ArrayListUnmanaged(T){}`        -> `std.ArrayListUnmanaged(T).empty`
+ * The type argument is matched with balanced parentheses, so `Map(K, std.ArrayList(V)) = .{}` is left alone.
+ * Untyped `.list = .{}` field inits are not detectable by text; the compiler reports them ("missing struct field").
+ */
+const arrayListEmpty: Rule = {
+  name: "arraylist-empty",
+  desc: "`std.ArrayList(T) = .{}` / `std.ArrayList(T){}` -> `.empty`",
+  run(src, mask) {
+    const edits: Edit[] = [];
+    const re = /\bstd\.ArrayList(?:Aligned)?(?:Unmanaged)?\(/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(src))) {
+      if (!mask[m.index]) continue;
+      let i = m.index + m[0].length;
+      let depth = 1;
+      while (i < src.length && depth > 0) {
+        if (mask[i]) {
+          if (src[i] === "(") depth++;
+          else if (src[i] === ")") depth--;
+        }
+        i++;
+      }
+      if (depth !== 0) continue;
+      const rest = src.slice(i);
+      const assign = /^(\s*=\s*)\.\{\s*\}/.exec(rest);
+      if (assign) {
+        edits.push({ start: i + assign[1].length, end: i + assign[0].length, text: ".empty" });
+        continue;
+      }
+      const lit = /^\{\s*\}/.exec(rest);
+      if (lit) edits.push({ start: i, end: i + lit[0].length, text: ".empty" });
+    }
+    return edits;
+  },
+};
+
 const REWRITE_RULES: Rule[] = [
   arrayMul,
   voidInit,
+  privateField,
+  arrayListEmpty,
   stackFallback,
   allocPrint,
   dupeZ,
@@ -522,6 +576,7 @@ const REPORT_RULES: { name: string; re: RegExp; why: string }[] = [
   { name: "needs-bun", re: /@typeInfo\(.*\.@"(?:struct|union|enum|opaque|fn)"\.(?:fields|decls|params)\b|\bstd\.heap\.(?:stackFallback|StackFallbackAllocator)\(|\bstd\.meta\.fields\(|\bstd\.(?:builtin|lang)\.Type\.(?:StructField|UnionField|EnumField|Declaration)\b/, why: "file has no @import(\"bun\"): port this reflection/allocator use to std 0.17 by hand" },
   { name: "errdefer-capture", re: /\berrdefer\s*\|/, why: "errdefer |err| removed: split into an inner fn + catch" },
   { name: "i0", re: /\bi0\b/, why: "i0 removed: use u0" },
+  { name: "private-field-string", re: /"#[A-Za-z_]/, why: "a \"#name\" string: if it names a private field (@field, @hasField), use \"priv_name\"" },
   { name: "decl-info", re: /\bstd\.meta\.declarationInfo\b/, why: "compile error in 0.17: use @hasDecl / @typeInfo" },
   { name: "get-last", re: /\.getLast(OrNull)?\(\)/, why: "std ArrayList: getLast -> last().?, getLastOrNull -> last() (bun's own lists keep getLast)" },
   { name: "info-var-fields", re: /\b(?:info|ti|type_info|tyinfo|struct_info|union_info|enum_info|fn_info)\.(?:fields|decls|params)\b/, why: "reflection through a variable: wrap with bun.meta.fieldsOf/declsOf/paramsOf" },

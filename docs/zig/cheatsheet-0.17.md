@@ -2,7 +2,8 @@
 
 Every claim below is backed by a probe that compiles and passes on **zig 0.17.1**
 (2026-11-26): `probes/basics.zig`, `probes/std-0.17.zig`, `probes/reflection-io.zig`, `probes/native-deps.zig`, `probes/hello.zig`,
-`probes/migration-017.zig`, `probes/build-file-cache/run.sh`, `probes/comptime-return/run.sh` and `probes/lazy-analysis.zig`.
+`probes/migration-017.zig`, `probes/build-file-cache/run.sh`, `probes/comptime-return/run.sh`, `probes/lazy-analysis.zig`,
+`probes/comptime-gate/run.sh` and `probes/restore-017/run.sh`.
 The build.zig skeleton comes from `zig init`. **When you add a line here, add its probe in the same change.**
 
 ## Entry point ("Juicy Main")
@@ -101,6 +102,8 @@ var an: std.array_hash_map.Auto(u32, u8) = .empty; // AutoArrayHashMapUnmanaged 
 - Bit sets were renamed: `std.bit_set.Integer(n)`, `.Static(n)`, `.Array(MaskInt, n)` start from `.empty` / `.full`.
   **Exception:** `std.bit_set.Dynamic` allocates, so it still uses `try .initEmpty(gpa, n)` / `.initFull(gpa, n)` and `deinit(gpa)`.
 - `std.enums.EnumSet(E)` also uses `.empty` / `.full` (`initEmpty()`/`initFull()` are gone; same for `bit_set.Integer`/`Array`).
+- `var l: std.ArrayList(T) = .{};` is a compile error ("missing struct field: items"): use `.empty`, also for
+  `@memset(lists, .empty)` (`probes/restore-017/run.sh`).
 - `std.ArrayList` has a field `pointer_stability: debug.SafetyLock` with **no default**. A struct literal must set it:
   `.{ .items = &.{}, .capacity = 0, .pointer_stability = .{} }`. Prefer `.empty` / `initCapacity` / `fromOwnedSlice`.
 
@@ -162,6 +165,10 @@ std.mem.cutPrefix(u8, "foobar", "foo") // ?[]const u8 -> "bar"
 
 - Zig analyses lazily: an unreferenced function is not type-checked at all, so errors in it go unnoticed
   until something calls it (`probes/lazy-analysis.zig`).
+- A `comptime`-false branch is not analysed either, so it may name a decl that doesn't exist
+  (`if (comptime flag) root.missing.run() else 0`). But **every `@import("x.zig")` in a loaded file must exist**,
+  even inside a dead branch or an uncalled function ("unable to load ... FileNotFound"): imports are resolved
+  eagerly (`probes/comptime-gate/run.sh`).
 
 ## Syntax removed
 
@@ -174,6 +181,7 @@ std.mem.cutPrefix(u8, "foobar", "foo") // ?[]const u8 -> "bar"
 | `void{}` | `{}` | 0.17 |
 | `errdefer \|err\|` | split into an inner fn + `catch \|err\|` | 0.17 |
 | `i0` | `u0` | 0.17 |
+| `#name` private fields | not vanilla Zig at all: an Oven-fork extension Bun 1.3.14 uses. zun renames to `priv_name` | never in vanilla (`probes/restore-017`) |
 | `.ReleaseFast` etc. in `std.lang.Optimize` | `.debug` `.safe` `.fast` `.small` | 0.17 |
 
 New in 0.17: `@divCeil`, `@backingInt` / `@fromBackingInt` (packed types ↔ backing int). Also useful, though older: `@FieldType(T, "name")`.

@@ -792,7 +792,7 @@ const Kqueue = struct {
     };
 
     pub const Watch = struct {
-        fds: std.ArrayListUnmanaged(i32) = .{},
+        fds: std.ArrayListUnmanaged(i32) = .empty,
 
         pub fn deinit(this: *Watch) void {
             this.fds.deinit(bun.default_allocator);

@@ -351,9 +351,9 @@ pub fn killSubreaperAdoptees(siblings: []const std.c.pid_t) void {
 fn killTreeRootedAt(root: std.c.pid_t, expected_ppid_of_root: std.c.pid_t) void {
     if (comptime !Environment.isPosix) return;
 
-    var to_visit: std.ArrayListUnmanaged(std.c.pid_t) = .{};
+    var to_visit: std.ArrayListUnmanaged(std.c.pid_t) = .empty;
     defer to_visit.deinit(bun.default_allocator);
-    var to_kill: std.ArrayListUnmanaged(std.c.pid_t) = .{};
+    var to_kill: std.ArrayListUnmanaged(std.c.pid_t) = .empty;
     defer to_kill.deinit(bun.default_allocator);
 
     if (std.c.kill(root, std.posix.SIG.STOP) != 0) return;

@@ -85,3 +85,18 @@ still needs `initEmpty(gpa, n)`) and that `std.meta.fields` was "deprecated" (it
 already a `@compileError`). Both were written from release-note summaries, not probes.
 **Do:** every cheatsheet line needs a probe. Grep hits in comments or vendored code
 (`src/unicode/uucode_lib`) inflate migration counts, so check where hits land before estimating.
+
+## 2026-11-26: restoring `src/md`: upstream Bun is not vanilla Zig
+
+Bun 1.3.14 was built with Oven's Zig fork, which accepts `#name` private fields. Vanilla 0.17.1 fails to
+parse them ("expected type expression, found 'invalid token'"). Cruller had already renamed them to `priv_name`
+in kept files, so the codemod now does the same (`private-field` rule). The other surprise: 10 of 14 errors
+were `std.ArrayListUnmanaged(T) = .{}`, and the same pattern sat in 10 never-compiled zun files
+(`JSTranspiler.zig`, `HTMLBundle.zig`, …) that nobody had noticed. **Do:** after copying a module, run the
+codemod over the whole tree (`--check src` must stay clean) so dead files get the same fix.
+
+## 2026-11-26: a gate cannot hide a missing file
+
+A gate like `const Shell = if (flag) @import("./shell/shell.zig") else struct {};` fails when the file is
+absent, even though the branch is dead: Zig loads every imported file eagerly. Gates can only hide **decls**
+(`bun.shell.x`) behind `if (comptime flag)`. `probes/comptime-gate/run.sh`.
