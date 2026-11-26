@@ -266,6 +266,8 @@ private:
 
         /* Mark that we are inside the parser now */
         httpContextData->flags.isParsingHttp = true;
+        auto *previousParsingSocket = httpContextData->parsingSocket;
+        httpContextData->parsingSocket = s;
         httpResponseData->isIdle = false;
 
         // clients need to know the cursor after http parse, not servers!
@@ -408,6 +410,7 @@ private:
 
         /* Mark that we are no longer parsing Http */
         httpContextData->flags.isParsingHttp = false;
+        httpContextData->parsingSocket = previousParsingSocket;
         /* If we got fullptr that means the parser wants us to close the socket from error (same as calling the errorHandler) */
         if (httpErrorStatusCode) {
             if(httpContextData->onClientError) {
@@ -517,6 +520,10 @@ private:
              * If write was never called, the developer should still return true so that we may drain. */
             bool success = httpResponseData->callOnWritable(reinterpret_cast<HttpResponse<SSL> *>(asyncSocket), httpResponseData->offset);
 
+            if (us_socket_is_closed(s)) {
+                return s;
+            }
+
             /* The developer indicated that their onWritable failed. */
             if (!success) {
                 /* Skip testing if we can drain anything since that might perform an extra syscall */
@@ -538,6 +545,9 @@ private:
                     /* We need to force close after sending FIN since we want to hinder
                      * clients from keeping to send their huge data */
                     asyncSocket->close();
+                    if (us_socket_is_closed(s)) {
+                        return s;
+                    }
                 }
             }
         }

@@ -62,6 +62,8 @@ private:
     /* This is the default router for default SNI or non-SSL */
     HttpRouter<RouterData> router;
     void *upgradedWebSocket = nullptr;
+    /* Only this socket will reach onData's post-parse close check. */
+    struct us_socket_t *parsingSocket = nullptr;
     /* Used to simulate Node.js socket events. */
     OnSocketClosedCallback onSocketClosed = nullptr;
     OnSocketDrainCallback onSocketDrain = nullptr;

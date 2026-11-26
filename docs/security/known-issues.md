@@ -215,16 +215,15 @@ re-verification of the cached chain in the same change. Source: `review-2026-11-
   related H2 note: zun also reuses an idle pooled socket that received unsolicited bytes, where Bun 1.4.5 opens a new
   one.
 
-### H5-1: `Bun.serve` keeps the connection open after an async response to a `Connection: close` request (Low), open
+### H5-1: `Bun.serve` keeps the connection open after an async response to a `Connection: close` request (Low), fix prepared (branch `t3/fix-async-connection-close`), unverified
 
 - **What:** request with `Connection: close` + an async handler: the response is sent, later pipelined bytes are discarded
   (the H5 smuggling fix holds: `/b` never reaches the handler), but the server never closes the socket. Bun 1.4.5 closes.
 - **Impact:** RFC 9112 9.6 violation; idle sockets held until the client or the idle timeout closes them (resource use, no
   request smuggling).
-- **Mechanism (from code reading, to confirm in the RCA):** `HTTP_CONNECTION_CLOSE` is set (`HttpContext.h:308`), but the
-  close happens only in the response-end paths when the socket is *not corked* (`HttpResponse.h:148`, `:214`) and in the
-  synchronous-return path (`HttpContext.h:437`). An async response ended while corked is uncorked later without that check.
-  Bun 1.4.5 handles it with the cork/drain changes of #42986, which the H5 backport left out on purpose.
+- **Mechanism:** the async `tryEnd` flushes the cork itself and skips the close check. The outer cork callback sees that
+  its slot is gone and returns. The patch checks for close after the flush, using the socket being parsed to preserve
+  the synchronous close path. See [H5-1 RCA](../rca/H5-1-close-after-async-response.md).
 - **Test:** `test-zun-serve-close-after-async.mjs` (fails on zun, passes on Bun 1.4.5); not in the gate until fixed.
 
 ### RT-4: `__crullerHandle` SSR dispatch drops JS exceptions (dormant), open

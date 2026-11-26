@@ -70,6 +70,11 @@ struct HttpResponseData : AsyncSocketData<SSL>, HttpParser {
         /* Run borrowed onWritable */
         bool ret = borrowedOnWritable(response, offset, userData);
 
+        /* The callback may complete the response and destroy this data. */
+        if (us_socket_is_closed((us_socket_t *) response)) {
+            return ret;
+        }
+
         /* If we still have onWritable (the placeholder) then move back the real one */
         if (onWritable) {
             /* We haven't reset onWritable, so give it back */

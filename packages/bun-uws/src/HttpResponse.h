@@ -96,6 +96,34 @@ public:
         getHttpResponseData()->state |= HttpResponseData<SSL>::HTTP_WROTE_DATE_HEADER;
     }
 
+    /* Flush a completed response and return true if we initiated closure. */
+    bool uncorkAndCloseIfNeeded(HttpResponseData<SSL> *httpResponseData, bool keepCorked) {
+        const bool wasCorked = Super::isCorked();
+        if (wasCorked) {
+            if (keepCorked) {
+                return false;
+            }
+            Super::uncork();
+        }
+
+        constexpr auto closeOrPending = HttpResponseData<SSL>::HTTP_CONNECTION_CLOSE | HttpResponseData<SSL>::HTTP_RESPONSE_PENDING;
+        if ((httpResponseData->state & closeOrPending) != HttpResponseData<SSL>::HTTP_CONNECTION_CLOSE || Super::getBufferedAmount() != 0) {
+            return false;
+        }
+
+        /* onData will check closure for its own socket after parsing.
+         * An async response may complete during another socket's parse. */
+        auto *socket = (us_socket_t *) this;
+        if (wasCorked && HttpContext<SSL>::getSocketContextDataS(socket)->parsingSocket == socket) {
+            return false;
+        }
+
+        Super::shutdown();
+        /* Close after sending FIN so the peer cannot keep sending data. */
+        Super::close();
+        return true;
+    }
+
     /* Returns true on success, indicating that it might be feasible to write more data.
      * Will start timeout if stream reaches totalSize or write failure.
      * keepCorked: if true, skip the trailing uncork so the caller can batch
@@ -144,21 +172,8 @@ public:
             Super::write("0\r\n\r\n", 5);
             httpResponseData->markDone(this);
 
-            /* We need to check if we should close this socket here now */
-            if (!Super::isCorked()) {
-                if (httpResponseData->state & HttpResponseData<SSL>::HTTP_CONNECTION_CLOSE) {
-                    if ((httpResponseData->state & HttpResponseData<SSL>::HTTP_RESPONSE_PENDING) == 0) {
-                        if (((AsyncSocket<SSL> *) this)->getBufferedAmount() == 0) {
-                            ((AsyncSocket<SSL> *) this)->shutdown();
-                            /* We need to force close after sending FIN since we want to hinder
-                                * clients from keeping to send their huge data */
-                            ((AsyncSocket<SSL> *) this)->close();
-                            return true;
-                        }
-                    }
-                }
-            } else if (!keepCorked) {
-                this->uncork();
+            if (uncorkAndCloseIfNeeded(httpResponseData, keepCorked)) {
+                return true;
             }
 
             /* tryEnd can never fail when in chunked mode, since we do not have tryWrite (yet), only write */
@@ -210,21 +225,7 @@ public:
             if (httpResponseData->offset == totalSize) {
                 httpResponseData->markDone(this);
 
-                /* We need to check if we should close this socket here now */
-                if (!Super::isCorked()) {
-                    if (httpResponseData->state & HttpResponseData<SSL>::HTTP_CONNECTION_CLOSE) {
-                        if ((httpResponseData->state & HttpResponseData<SSL>::HTTP_RESPONSE_PENDING) == 0) {
-                            if (((AsyncSocket<SSL> *) this)->getBufferedAmount() == 0) {
-                                ((AsyncSocket<SSL> *) this)->shutdown();
-                                /* We need to force close after sending FIN since we want to hinder
-                                * clients from keeping to send their huge data */
-                                ((AsyncSocket<SSL> *) this)->close();
-                            }
-                        }
-                    }
-                }  else if (!keepCorked) {
-                    this->uncork();
-                }
+                uncorkAndCloseIfNeeded(httpResponseData, keepCorked);
             }
 
             return success;
@@ -465,7 +466,8 @@ public:
      * Starts a timeout in some cases. Returns [ok, hasResponded] */
     std::pair<bool, bool> tryEnd(std::string_view data, uintmax_t totalSize = 0, bool closeConnection = false) {
         bool ok = internalEnd(data, totalSize, true, true, closeConnection);
-        return {ok, hasResponded()};
+        /* Completion can close the socket and destroy the HTTP data. */
+        return {ok, us_socket_is_closed((us_socket_t *) this) || hasResponded()};
     }
 
     /* Write the end of chunked encoded stream */
