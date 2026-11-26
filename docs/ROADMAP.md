@@ -65,7 +65,8 @@ Each step is accepted only when the Phase 1 smoke tests pass again.
 
 Rename the identity: binary `zun`, and its own install dir, cache dir, env-var prefix and config file,
 so nothing collides with the real Bun. The global API stays `Bun.*`, so existing code still runs.
-Decide whether to also expose a `Zun` alias (open question).
+Decided 2026-11-26: config is `zunfig.toml` with `bunfig.toml` fallback; env vars `ZUN_*` first with `BUN_*` fallback (Bun's
+tests set `BUN_*`); all default dirs under `~/.zun`, never `~/.bun`; no `Zun` JS alias; no crash reports or telemetry sent to Bun's servers.
 
 ## Phase 4: Restore Bun 1.3.14 features (port upstream Zig to 0.17)
 
@@ -73,12 +74,19 @@ The source for each feature is `bun-v1.3.14/src/<module>`. Every restored module
 by upstream's own tests for it. **Hard rule: the test runner comes right after the CLI skeleton**, because every later
 restore is measured with it. Order, chosen so each step makes the next one testable:
 
-1. **CLI** (`src/cli`): real argument parsing and the subcommand skeleton. `zun run file.ts` with on-the-fly TS (the parser is in the tree, but cruller's README says transpiling on load is cut: Phase 1 finds out).
-2. **Test runner** (`src/test_runner`, `bun:test`). Restore it early so we can run Bun's own test suite as the spec.
-3. **Package manager** (`src/install`, `libarchive`, `patch`): `zun install/add/remove`, lockfile.
-4. **Shell** (`src/shell*`): `Bun.$`, `zun exec`.
-5. **Bundler + CSS** (`src/bundler`, `src/css`, `standalone_graph`): `zun build`, `--compile`.
-6. **The rest:** `napi` (native addons), `sql`, `md`, `Bun.Transpiler`, …
+Order (decided 2026-11-26, from `docs/plan/restore-1.3.14.md`):
+
+1. **Prep:** stub inventory and CLI gates.
+2. **`md`** (`Bun.markdown`), which removes one CLI gate.
+3. **CLI core** (`src/cli`): real argument parsing, subcommand skeleton, compile-time gates for commands not yet restored.
+4. **Test runner** (`src/test_runner`, `bun:test`, `internal-for-testing.ts`). 1,492 of 1,790 test files need it.
+5. **`js_parser_jsc` / `Bun.Transpiler`**: parser conformance tests early.
+6. **Shell** (`src/shell*`, `Bun.$`, `zun exec`). 70 test files use `Bun.$`.
+7. **libarchive / `Bun.Archive`**, then **`patch`**.
+8. **Package manager** (`src/install`): `zun install/add/remove`, lockfile.
+9. **CSS** (`src/css`; watch the 983 `@hasDecl` uses).
+10. **Full bundler**, then **standalone executables** (`standalone_graph`, macho/pe), then **bake DevServer**.
+11. **In parallel any time after the test runner:** N-API (`src/napi`) and `sql`.
 - **Checkpoint after each item.** Update `docs/status/parity.md` (test pass rates per area) after each one.
 
 ## Phase 5: Catch up to Bun 1.4.x
@@ -110,8 +118,8 @@ macOS first, then Windows, then FreeBSD. All three were removed by cruller, and 
 ## Open questions (bring to the next checkpoint)
 
 1. ~~Platform order~~ **Decided:** Linux only until Linux parity is done; macOS and Windows in Phase 7.
-2. Config file: read `bunfig.toml` for compatibility, use our own `zunfig.toml`, or both?
-3. Expose `globalThis.Zun` as an alias of `Bun`?
+2. ~~Config file~~ **Decided:** `zunfig.toml`, falling back to `bunfig.toml` when absent.
+3. ~~`globalThis.Zun` alias~~ **Decided:** no alias for now; the JS surface stays identical to Bun.
 4. Node target version for `process.version` (Bun 1.3.14 reports 24.3.0).
 5. N-API: restore early (many npm packages need it) or in item 6 as planned?
 6. Go's role: only for tooling like typescript-go, or more?
@@ -120,7 +128,4 @@ macOS first, then Windows, then FreeBSD. All three were removed by cruller, and 
    is probably a planned task between Phase 4 and Phase 5, not open-ended.
 8. Go placement: link check/lint/fmt into the `zun` binary (+28 MB, about 0.6 ms startup cost on every run, one Go runtime per process, untested signal-handler interplay with JSC) or ship a companion executable?
 9. AoT front end: choosing typescript-go for `check` does not give zun an AoT front end (canary's is built on sema's internals). Decide when AoT work starts (`docs/plan/aot.md` vs `docs/plan/tooling.md`).
-10. Phase 4 restore order: adopt T5's proposal (`docs/plan/restore-1.3.14.md`)? It differs from the list above in three moves:
-    `md` before the CLI (removes a CLI gate), `Bun.Transpiler` as step 4 (parser conformance tests early), and the shell before
-    install (70 test files use `Bun.$`). Proposed order: prep → md → CLI core → test_runner → js_parser_jsc/Transpiler → shell →
-    libarchive/Bun.Archive → patch → install → css → full bundler → standalone/macho/pe → bake DevServer; N-API and sql in parallel after the test runner.
+10. ~~Phase 4 restore order~~ **Decided:** adopt T5's order (see Phase 4).
