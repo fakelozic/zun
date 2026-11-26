@@ -621,14 +621,35 @@ pub fn NewSocket(comptime ssl: bool) type {
             const handlers = this.getHandlers();
             log("onHandshake {s} ({d})", .{ if (handlers.mode == .server) "S" else "C", success });
 
-            const authorized = if (success == 1) true else false;
+            // `success` only says the TLS handshake finished. The chain verdict is `ssl_error`: our verify callback
+            // always lets the handshake continue (openssl.c us_verify_callback) and leaves the decision to us. Bun 1.4.5
+            // (socket_body.rs on_handshake) never reports `authorized` for a chain that failed verification.
+            const verify_failed = ssl_error.error_no != 0;
+            this.flags.authorized = success == 1 and !verify_failed;
 
-            this.flags.authorized = authorized;
+            // security (H6 (a)/(e), RCA docs/rca/H6a-bun-connect-verify.md): a TLS client with `rejectUnauthorized`
+            // (the default) must not keep a connection whose verification failed, and no application data may flow
+            // to or from that peer. Mark it before any callback runs so every write path refuses (including the raw
+            // twin of an `upgradeTLS` pair, which shares the fd), then close it after the callback, whatever the
+            // callback did. A handshake that failed outright (`success == 0`) has no usable transport either.
+            // Servers are left alone: their client-certificate policy is enforced in openssl.c / node:tls.
+            const reject = comptime ssl and
+                this.flags.reject_unauthorized and
+                !this.isServer() and
+                (verify_failed or success == 0);
+            if (reject) {
+                this.flags.rejected = true;
+                if (this.twin) |raw| raw.flags.rejected = true;
+            }
+            // What the `handshake` callback receives as its second argument. Bun 1.4.5 fails the handshake itself
+            // when it rejects (success=false); a permissive client sees whether the handshake completed.
+            const reported_success = success == 1 and !reject;
 
             var callback = handlers.onHandshake;
             var is_open = false;
 
             if (handlers.vm.isShuttingDown()) {
+                if (reject) this.rejectUnauthorizedConnection();
                 return;
             }
 
@@ -636,52 +657,71 @@ pub fn NewSocket(comptime ssl: bool) type {
             if (callback == .zero) {
                 callback = handlers.onOpen;
                 if (callback == .zero) {
+                    if (reject) this.rejectUnauthorizedConnection();
                     return;
                 }
                 is_open = true;
             }
 
-            // the handlers must be kept alive for the duration of the function call
-            // that way if we need to call the error handler, we can
-            var scope = handlers.enter();
-            defer if (scope.exit()) {
-                this.handlers = null;
-            };
+            // Keep `this` alive across the callback and the close that follows it.
+            this.ref();
+            defer this.deref();
 
-            const globalObject = handlers.globalObject;
-            const this_value = this.getThisValue(globalObject);
+            {
+                // the handlers must be kept alive for the duration of the function call
+                // that way if we need to call the error handler, we can
+                var scope = handlers.enter();
+                defer if (scope.exit()) {
+                    this.handlers = null;
+                };
 
-            var result: jsc.JSValue = jsc.JSValue.zero;
-            // open callback only have 1 parameters and its the socket
-            // you should use getAuthorizationError and authorized getter to get those values in this case
-            if (is_open) {
-                result = callback.call(globalObject, this_value, &[_]JSValue{this_value}) catch |err| globalObject.takeException(err);
+                const globalObject = handlers.globalObject;
+                const this_value = this.getThisValue(globalObject);
 
-                // only call onOpen once for clients
-                if (handlers.mode != .server) {
-                    // clean onOpen callback so only called in the first handshake and not in every renegotiation
-                    // on servers this would require a different approach but it's not needed because our servers will not call handshake multiple times
-                    // servers don't support renegotiation
-                    handlers.onOpen.unprotect();
-                    handlers.onOpen = .zero;
+                var result: jsc.JSValue = jsc.JSValue.zero;
+                // open callback only have 1 parameters and its the socket
+                // you should use getAuthorizationError and authorized getter to get those values in this case
+                if (is_open) {
+                    result = callback.call(globalObject, this_value, &[_]JSValue{this_value}) catch |err| globalObject.takeException(err);
+
+                    // only call onOpen once for clients
+                    if (handlers.mode != .server) {
+                        // clean onOpen callback so only called in the first handshake and not in every renegotiation
+                        // on servers this would require a different approach but it's not needed because our servers will not call handshake multiple times
+                        // servers don't support renegotiation
+                        handlers.onOpen.unprotect();
+                        handlers.onOpen = .zero;
+                    }
+                } else {
+                    // call handhsake callback with authorized and authorization error if has one
+                    const authorization_error: JSValue = if (ssl_error.error_no == 0)
+                        JSValue.jsNull()
+                    else
+                        try ssl_error.toJS(globalObject);
+
+                    result = callback.call(globalObject, this_value, &[_]JSValue{
+                        this_value,
+                        JSValue.jsBoolean(reported_success),
+                        authorization_error,
+                    }) catch |err| globalObject.takeException(err);
                 }
-            } else {
-                // call handhsake callback with authorized and authorization error if has one
-                const authorization_error: JSValue = if (ssl_error.error_no == 0)
-                    JSValue.jsNull()
-                else
-                    try ssl_error.toJS(globalObject);
 
-                result = callback.call(globalObject, this_value, &[_]JSValue{
-                    this_value,
-                    JSValue.jsBoolean(authorized),
-                    authorization_error,
-                }) catch |err| globalObject.takeException(err);
+                if (result.toError()) |err_value| {
+                    _ = handlers.callErrorHandler(this_value, &.{ this_value, err_value });
+                }
             }
 
-            if (result.toError()) |err_value| {
-                _ = handlers.callErrorHandler(this_value, &.{ this_value, err_value });
-            }
+            // Fail closed: an unauthorized connection is closed whatever happened in the handlers.
+            if (reject) this.rejectUnauthorizedConnection();
+        }
+
+        /// Close a TLS client whose peer failed verification under `rejectUnauthorized` (Bun 1.4.5
+        /// `reject_unauthorized_connection`). `.fast_shutdown` skips close_notify; pending buffered writes were
+        /// already refused by the `rejected` flag. The close is dispatched (onClose runs), unlike `closeAndDetach`.
+        fn rejectUnauthorizedConnection(this: *This) void {
+            if (this.socket.isDetached() or this.socket.isClosed()) return;
+            this.buffered_data_for_node_net.clearAndFree(bun.default_allocator);
+            this.socket.close(.fast_shutdown);
         }
 
         pub fn onClose(this: *This, socket: Socket, err: c_int, reason: ?*anyopaque) bun.JSError!void {
