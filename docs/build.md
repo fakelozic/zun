@@ -12,6 +12,8 @@ What actually worked on the dev machine on 2026-11-26. Since Phase 2 the tree bu
 mkdir -p vendor/llvm-dl vendor/llvm-21.1.8
 curl -L -o vendor/llvm-dl/LLVM-21.1.8-Linux-X64.tar.xz \
   https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.8/LLVM-21.1.8-Linux-X64.tar.xz
+# verify before extracting (sha256 from the GitHub release asset digest of llvmorg-21.1.8; security: supply chain)
+echo "b3b7f2801d15d50736acea3c73982994d025b01c2f035b91ae3b49d1b575732b  vendor/llvm-dl/LLVM-21.1.8-Linux-X64.tar.xz" | sha256sum -c
 tar -xJf vendor/llvm-dl/LLVM-21.1.8-Linux-X64.tar.xz -C vendor/llvm-21.1.8 --strip-components=1
 rm vendor/llvm-dl/LLVM-21.1.8-Linux-X64.tar.xz
 mkdir -p vendor/perl5-dl && cd vendor/perl5-dl && \

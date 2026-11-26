@@ -24,6 +24,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { ar, cc, cxx, nasm } from "./compile.ts";
 import type { BuildType, Config } from "./config.ts";
 import { assert } from "./error.ts";
+import { sha256SumsFile } from "./download.ts";
 import { computeSourceIdentity, fetchCliPath } from "./fetch-cli.ts";
 import { computeDepFlags } from "./flags.ts";
 import { writeIfChanged } from "./fs.ts";
@@ -972,12 +973,14 @@ function emitFetch(
     // Source files bun compiles directly (picohttpparser.c). Declaring
     // them as outputs tells ninja "fetch creates these" — otherwise ninja
     // errors "missing and no known rule to make it" on fresh checkouts.
-    ...(compiledSources.length > 0 && { implicitOutputs: compiledSources }),
+    // zun (security: supply chain): `.sha256` records the verified tarball hash. Declared so that a missing stamp
+    // re-runs the fetch (which re-verifies), and the pins file is an input so a pin change re-checks every source.
+    implicitOutputs: [...compiledSources, resolve(srcDir, ".sha256")],
     rule: "dep_fetch",
     inputs: [],
     // fetch-cli.ts (which has fetchDep) + patch files. Not this file —
     // it's configure-time ninja emission, not fetch logic.
-    implicitInputs: [fetchCliPath, ...patchPaths],
+    implicitInputs: [fetchCliPath, sha256SumsFile, ...patchPaths],
     vars: {
       name,
       repo: source.repo,
@@ -1029,12 +1032,14 @@ function emitPrebuilt(
   // prunes downstream when fetch was a no-op).
   n.build({
     outputs: [stamp],
-    implicitOutputs: libs,
+    // zun (security: supply chain): see dep_fetch above; `.sha256` + pins file make ninja re-verify on change.
+    implicitOutputs: [...libs, resolve(destDir, ".sha256")],
     rule: "dep_fetch_prebuilt",
     inputs: [],
-    // Only fetch-cli.ts. download.ts has a lot of shared helpers — editing
-    // those shouldn't re-download a multi-hundred-MB WebKit tarball.
-    implicitInputs: [fetchCliPath],
+    // Only fetch-cli.ts (+ the pins). download.ts has a lot of shared helpers — editing
+    // those shouldn't re-download a multi-hundred-MB WebKit tarball. A pin change re-runs the fetch, which
+    // short-circuits when the extracted tree's .sha256 stamp already equals the pin.
+    implicitInputs: [fetchCliPath, sha256SumsFile],
     vars: {
       name,
       url: source.url,

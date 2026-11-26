@@ -31,13 +31,90 @@
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { createWriteStream, existsSync, readFileSync } from "node:fs";
+import { appendFileSync, createReadStream, createWriteStream, existsSync, readFileSync } from "node:fs";
 import { chmod, copyFile, cp, lstat, mkdir, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { fileURLToPath } from "node:url";
 import type { ReadableStream as NodeWebReadable } from "node:stream/web";
 import { BuildError, assert } from "./error.ts";
+
+// ───────────────────────────────────────────────────────────────────────────
+// zun (security: supply chain): every download is pinned by sha256
+// ───────────────────────────────────────────────────────────────────────────
+//
+// `scripts/build/deps/sha256sums.txt` lists `<sha256>  <url>` for every file the build downloads (dependency source
+// archives, the WebKit prebuilt, Node headers). downloadWithRetry refuses a URL with no pin *before* touching the
+// network, and verifies the bytes before publishing them; cached tarballs and extracted trees are re-checked against the
+// pin (see fetchDep / fetchPrebuilt). A mismatch is fatal: the file is deleted and the build stops.
+//
+// Recording a new pin (after a version bump) is an explicit, reviewable act: `ZUN_PIN_RECORD=1` appends the sha256 of
+// what was downloaded for each unpinned URL. That is trust-on-first-use, so cross-check against an independent source
+// where one exists (GitHub release asset digests, nodejs.org SHASUMS256.txt) and review the diff of sha256sums.txt.
+
+export const sha256SumsFile = fileURLToPath(new URL("./deps/sha256sums.txt", import.meta.url));
+
+function readPins(): Map<string, string> {
+  const pins = new Map<string, string>();
+  if (!existsSync(sha256SumsFile)) return pins;
+  for (const raw of readFileSync(sha256SumsFile, "utf8").split("\n")) {
+    const line = raw.trim();
+    if (line === "" || line.startsWith("#")) continue;
+    const m = /^([0-9a-f]{64})\s+(\S+)$/.exec(line);
+    assert(m !== null, `malformed line in sha256sums.txt: ${line}`, { file: sha256SumsFile });
+    pins.set(m[2]!, m[1]!);
+  }
+  return pins;
+}
+
+const recordPins = process.env.ZUN_PIN_RECORD === "1";
+
+/** The pinned sha256 for `url`, or undefined. */
+export function pinnedSha256(url: string): string | undefined {
+  return readPins().get(url);
+}
+
+/** Fails (before any network access) unless `url` is pinned, or pin recording was explicitly requested. */
+function requirePin(url: string): string | undefined {
+  const pin = pinnedSha256(url);
+  if (pin !== undefined || recordPins) return pin;
+  throw new BuildError(`No sha256 is pinned for ${url}`, {
+    file: sha256SumsFile,
+    hint:
+      "Every download must be pinned (AGENTS.md rule 6). Verify the artifact independently, then rebuild with " +
+      "ZUN_PIN_RECORD=1 to record its sha256, and review the diff of scripts/build/deps/sha256sums.txt",
+  });
+}
+
+export async function sha256File(path: string): Promise<string> {
+  const hash = createHash("sha256");
+  await pipeline(createReadStream(path), hash);
+  return hash.digest("hex");
+}
+
+/**
+ * Checks `path` against the pin for `url` and returns its sha256. With no pin and ZUN_PIN_RECORD=1, records it.
+ * On a mismatch the file is deleted and the build stops: it is either corrupt or not what we pinned.
+ */
+export async function verifyPinnedFile(path: string, url: string): Promise<string> {
+  const actual = await sha256File(path);
+  const pin = pinnedSha256(url);
+  if (pin === undefined) {
+    assert(recordPins, `No sha256 is pinned for ${url}`, { file: sha256SumsFile });
+    appendFileSync(sha256SumsFile, `${actual}  ${url}\n`);
+    console.log(`recorded sha256 ${actual} for ${url} (ZUN_PIN_RECORD=1; review the diff)`);
+    return actual;
+  }
+  if (actual !== pin) {
+    await rm(path, { force: true });
+    throw new BuildError(`sha256 mismatch for ${url}: expected ${pin}, got ${actual}`, {
+      file: sha256SumsFile,
+      hint: "The download is corrupt or has been replaced upstream. Do not re-pin without finding out which",
+    });
+  }
+  return actual;
+}
 
 // On Windows, prefer the OS-shipped bsdtar. Git-for-Windows / MSYS put GNU tar
 // earlier in PATH, and GNU tar parses `C:\...` as an rsh `host:path` spec
@@ -70,10 +147,10 @@ const tarExe =
  * whereas "look at the path bootstrap writes to" doesn't.
  */
 export const prefetchDir: string | undefined = (() => {
+  // zun (security: supply chain): only an explicitly configured prefetch dir is used, never a well-known path that
+  // whatever wrote it could fill, and its by-url files are verified against the pins like any download.
   const env = process.env.BUN_BUILD_PREFETCH_DIR;
-  if (env) return env;
-  const wellKnown = process.platform === "win32" ? "C:\\bun-prefetch" : "/opt/bun-prefetch";
-  return existsSync(wellKnown) ? wellKnown : undefined;
+  return env ? env : undefined;
 })();
 
 /**
@@ -96,30 +173,13 @@ export function prefetchPathForUrl(url: string, dir = prefetchDir): string | und
  * and writable; the prefetch tree may be read-only.
  */
 export async function tryPrefetchExtracted(dest: string, stampFile: string, expected: string): Promise<boolean> {
-  if (prefetchDir === undefined) return false;
-  const src = resolve(prefetchDir, "extracted", basename(dest));
-  const stamp = resolve(src, stampFile);
-  if (!existsSync(stamp) || readFileSync(stamp, "utf8").trim() !== expected) return false;
-  console.log(`using prefetch cache: ${src}`);
-  // Stage-then-rename so an interrupted copy doesn't leave a stamped-but-
-  // incomplete tree at dest (same publish discipline as fetchPrebuilt).
-  const staging = `${dest}.${process.pid}.prefetch`;
-  await rm(staging, { recursive: true, force: true });
-  await mkdir(resolve(dest, ".."), { recursive: true });
-  try {
-    await cp(src, staging, { recursive: true });
-    // cp preserves source modes, and bootstrap chmod's the prefetch dir
-    // read-only. Restore u+w on the copy so a future version bump can
-    // `rm -rf dest` (force only suppresses ENOENT, not EACCES on a 555 dir).
-    await chmodRecursiveWritable(staging);
-    await rm(dest, { recursive: true, force: true });
-    await rename(staging, dest);
-  } finally {
-    // Best-effort: staging may still have 555 dirs if chmod failed partway.
-    await chmodRecursiveWritable(staging).catch(() => {});
-    await rm(staging, { recursive: true, force: true }).catch(() => {});
-  }
-  return true;
+  // zun (security: supply chain): pre-extracted prefetch trees can't be checked against a tarball's pinned sha256, so
+  // they are never used; callers fall through to a verified download. (Upstream copied <prefetchDir>/extracted/<name>
+  // into dest when its stamp matched.)
+  void dest;
+  void stampFile;
+  void expected;
+  return false;
 }
 
 async function chmodRecursiveWritable(root: string): Promise<void> {
@@ -140,7 +200,9 @@ async function chmodRecursiveWritable(root: string): Promise<void> {
  *
  * @param logPrefix Shown in progress/retry messages: `[<logPrefix>] retry 2/5`
  */
-export async function downloadWithRetry(url: string, dest: string, logPrefix: string): Promise<void> {
+export async function downloadWithRetry(url: string, dest: string, logPrefix: string): Promise<string> {
+  // zun: refuse unpinned URLs before any network access. Returns the verified sha256.
+  requirePin(url);
   const prefetched = prefetchPathForUrl(url);
   if (prefetched !== undefined && existsSync(prefetched)) {
     console.log(`using prefetch cache: ${prefetched}`);
@@ -149,8 +211,9 @@ export async function downloadWithRetry(url: string, dest: string, logPrefix: st
     // interrupted copy must not leave a partial file claiming to be complete.
     const tmp = `${dest}.${process.pid}.partial`;
     await copyFile(prefetched, tmp);
+    const sha = await verifyPinnedFile(tmp, url);
     await rename(tmp, dest);
-    return;
+    return sha;
   }
 
   const maxAttempts = 5;
@@ -178,10 +241,13 @@ export async function downloadWithRetry(url: string, dest: string, logPrefix: st
       // Cast: DOM ReadableStream vs node:stream/web ReadableStream — same
       // shape at runtime, different TS lib declarations.
       await pipeline(Readable.fromWeb(res.body as unknown as NodeWebReadable), createWriteStream(tmpPath));
+      const sha = await verifyPinnedFile(tmpPath, url);
       await rename(tmpPath, dest);
-      return;
+      return sha;
     } catch (err) {
       lastError = err;
+      // zun: a sha256 mismatch is not a transient network error. Stop, don't retry.
+      if (err instanceof BuildError && err.message.startsWith("sha256 mismatch")) throw err;
       // Swallow cleanup errors: on Windows, AV/indexer can briefly lock the
       // partial; a failed unlink must not abort the retry loop. Next attempt's
       // createWriteStream truncates anyway.
@@ -299,9 +365,13 @@ export async function fetchPrebuilt(
   rmPaths: string[] = [],
 ): Promise<void> {
   const stampPath = resolve(dest, ".identity");
+  // zun: the extracted tree records the sha256 of the tarball it came from; it is reused only if that is the pin.
+  const shaStampPath = resolve(dest, ".sha256");
+  const pin = requirePin(url);
+  const shaOk = pin !== undefined && existsSync(shaStampPath) && readFileSync(shaStampPath, "utf8").trim() === pin;
 
   // ─── Short-circuit: already at this identity? ───
-  if (existsSync(stampPath)) {
+  if (existsSync(stampPath) && shaOk) {
     const existing = readFileSync(stampPath, "utf8").trim();
     if (existing === identity) {
       console.log(`up to date`);
@@ -323,7 +393,7 @@ export async function fetchPrebuilt(
   const destParent = resolve(dest, "..");
   await mkdir(destParent, { recursive: true });
   const tarballPath = `${dest}${suffix}.tar.gz`;
-  await downloadWithRetry(url, tarballPath, name);
+  const tarballSha = await downloadWithRetry(url, tarballPath, name);
 
   // ─── Extract ───
   // Extract to a private staging dir, then hoist. We don't extract directly
@@ -349,6 +419,7 @@ export async function fetchPrebuilt(
     for (const p of rmPaths) {
       await rm(resolve(hoistFrom, p), { recursive: true, force: true });
     }
+    await writeFile(resolve(hoistFrom, ".sha256"), tarballSha + "\n");
     await writeFile(resolve(hoistFrom, ".identity"), identity + "\n");
 
     // ─── Publish ───

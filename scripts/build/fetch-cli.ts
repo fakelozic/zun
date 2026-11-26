@@ -25,7 +25,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
-import { downloadWithRetry, extractTarGz, fetchPrebuilt } from "./download.ts";
+import { downloadWithRetry, extractTarGz, fetchPrebuilt, pinnedSha256, verifyPinnedFile } from "./download.ts";
 import { BuildError, assert } from "./error.ts";
 import { writeIfChanged } from "./fs.ts";
 import { fetchZig } from "./zig.ts";
@@ -157,9 +157,14 @@ async function fetchDep(
   }
 
   const identity = computeSourceIdentity(commit, patchContents);
+  const url = `https://github.com/${repo}/archive/${commit}.tar.gz`;
+  // zun (security: supply chain): an extracted tree is reused only if it records the pinned tarball sha256.
+  const shaStampPath = join(dest, ".sha256");
+  const pin = pinnedSha256(url);
+  const shaOk = pin !== undefined && existsSync(shaStampPath) && readFileSync(shaStampPath, "utf8").trim() === pin;
 
   // Short-circuit: already fetched at this identity?
-  if (existsSync(refPath)) {
+  if (existsSync(refPath) && shaOk) {
     const existing = readFileSync(refPath, "utf8").trim();
     if (existing === identity) {
       // No-op. Don't touch .ref — restat will see unchanged mtime.
@@ -174,14 +179,23 @@ async function fetchDep(
   console.log(`fetching ${repo}@${commit.slice(0, 8)}`);
 
   // ─── Download (with cache) ───
-  const url = `https://github.com/${repo}/archive/${commit}.tar.gz`;
   const urlHash = createHash("sha256").update(url).digest("hex").slice(0, 16);
   const tarballPath = join(cache, `${name}-${urlHash}.tar.gz`);
 
   await mkdir(cache, { recursive: true });
 
-  if (!existsSync(tarballPath)) {
-    await downloadWithRetry(url, tarballPath, name);
+  // zun: a cached tarball is verified before use; a bad one is deleted (by verifyPinnedFile) and fetched again.
+  let tarballSha: string | undefined;
+  if (existsSync(tarballPath)) {
+    try {
+      tarballSha = await verifyPinnedFile(tarballPath, url);
+    } catch (err) {
+      if (existsSync(tarballPath)) throw err;
+      console.log(`cached tarball failed verification and was removed; fetching again`);
+    }
+  }
+  if (tarballSha === undefined) {
+    tarballSha = await downloadWithRetry(url, tarballPath, name);
   }
 
   // ─── Extract ───
@@ -209,6 +223,7 @@ async function fetchDep(
 
   // ─── Write stamp ───
   // Written LAST — if anything above failed, no stamp means next build retries.
+  await writeFile(shaStampPath, tarballSha + "\n");
   await writeFile(refPath, identity + "\n");
   console.log(`done → ${dest}`);
 }

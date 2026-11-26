@@ -3,7 +3,37 @@
 **Date:** 2026-11-26. **Rule** (`AGENTS.md` rule 6): every download must be **pinned** (commit or version) **and**
 **checksum-verified**. This file lists what the build fetches today, and the gaps.
 
-## Download machinery (what verification exists today)
+## Status after `security: supply chain` (2026-11-26)
+
+**Enforced now** (`scripts/build/download.ts`, `fetch-cli.ts`, `source.ts`):
+- `scripts/build/deps/sha256sums.txt` pins `<sha256>  <url>` for every download the build makes. `downloadWithRetry`
+  refuses an unpinned URL **before** any network access and verifies the bytes before publishing them. A mismatch deletes
+  the file and stops the build (no retry).
+- Cached tarballs (`fetchDep`) are re-verified when used. Extracted trees (deps and prebuilts) carry a `.sha256` stamp
+  and are reused only if it equals the pin. Both the pins file (implicit input) and the stamp (implicit output) are in
+  the ninja graph, so changing a pin or deleting a stamp re-runs the fetch and re-verifies.
+- Prefetch: only an explicit `BUN_BUILD_PREFETCH_DIR` is used (no `/opt/bun-prefetch` auto-detection), its by-url files are
+  verified like downloads, and pre-extracted prefetch trees are never used (they can't be checked against a pin).
+- The oven-sh/zig download path is unpinned, so it now fails closed. zun uses `BUN_ZIG_PATH` (vanilla Zig 0.17.1).
+- Recording new pins is explicit and reviewable: `ZUN_PIN_RECORD=1` (trust on first use; cross-check, then review the diff).
+
+**Provenance of the initial pins:**
+| Pins | Source of trust |
+|------|-----------------|
+| 19 GitHub source archives | Fresh downloads recorded with `ZUN_PIN_RECORD=1`; each was **byte-identical** to the copy downloaded earlier the same day (archives are stable). Commits are immutable; the archive hash is TOFU |
+| WebKit `bun-webkit-linux-amd64-debug-asan` | Downloaded and hashed; equals GitHub's release-asset digest (`b1384cf9…`) |
+| Other Linux x64 WebKit variants (release, lto, asan, baseline) | GitHub release-asset digests of `autobuild-5488984d…` (not yet downloaded by zun) |
+| Node headers v24.3.0 | Downloaded and hashed; equals nodejs.org `SHASUMS256.txt` (`045e9bf4…`) |
+| LLVM 21.1.8 (manual step, `docs/build.md`) | GitHub release-asset digest `b3b7f280…`; `sha256sum -c` now in the documented step |
+
+**Verified:** a wrong pin stops the build with `sha256 mismatch`; a missing pin stops it before downloading; a correct pin
+is a no-op (`up to date`). Repeat by editing one line of `sha256sums.txt` and running
+`bun scripts/build.ts --profile=debug --cache-dir=build/cache --target=clone-picohttpparser`.
+
+**Still open:** SBOM per build (gap 8), release provenance (gap 9), mise toolchain verification (gap 7, row 10),
+GPG/attestation verification beyond sha256 (LLVM `.jsonl` attestation, Node's signed SHASUMS).
+
+## Download machinery (before this change, for reference)
 
 - `scripts/build/download.ts` `downloadWithRetry()` (~`:137-200`) fetches with Node or Bun `fetch` (TLS verified by the
   runtime's defaults), streams to `<dest>.partial`, then renames. **It never hashes the content.** The only hashing is
