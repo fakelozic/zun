@@ -51,6 +51,37 @@ They do not go through `sha256sums.txt`. Do not use them to produce release buil
 The documented build (`docs/build.md`) uses none of these: LLVM is the pinned tarball, Zig comes from mise via
 `BUN_ZIG_PATH`, Bun is the owner's mise install, and `BUN_BUILD_PREFETCH_DIR` is unset.
 
+**Trust boundary of the build cache (SC-1, SC-3: assessment, no code change yet; the owner decides).**
+- *What is verified:* bytes, at the moment they are fetched. Archives are checked against `sha256sums.txt` and
+  extracted from a private copy (SC-2). After that, an extracted tree (`vendor/<dep>`, `<cache>/webkit-*`) carries
+  `.ref`/`.identity`/`.sha256` stamps. **Stamps are download metadata, not integrity checks:** they say which pinned
+  archive the tree came from, not that the tree still matches it. The up-to-date short-circuits
+  (`fetch-cli.ts` `fetchDep`, `download.ts` `fetchPrebuilt`) compare stamp text only, and ninja's pins-file input and
+  stamp outputs do not authenticate tree contents. Anyone who can write the tree can change a header or `.a` and keep
+  valid stamps (SC-1, confirmed).
+- *Trust boundary (current policy):* the build user's own `vendor/`, `build/` and `--cache-dir` are **trusted**, like the
+  source checkout and `$BUN_ZIG_PATH`/the LLVM install: a process running as that user can already edit the sources.
+  A cache shared between users, writable by another account or service, mounted from elsewhere, or baked into an image
+  by someone else (`BUN_BUILD_PREFETCH_DIR`, `scripts/prefetch-deps.ts`) is **not supported for production builds**.
+  For a release build: a fresh, private `--cache-dir` and `vendor/` on a single-tenant builder (or CI from a clean,
+  digest-pinned image), so every tree is extracted from verified bytes during that build.
+- *SC-3 (confirmed):* `prefetch-deps.ts` skips verification when its `by-url` file already exists and then extracts it,
+  and its hoist does not reject a symlinked top-level entry. Its output is ignored by the build (pre-extracted trees are
+  never used; `by-url` files are verified on use), and it is legacy (see the table above). After SC-4 its Zig item is
+  unpinned, so it now stops with "No sha256 is pinned". Options: delete the script (the CI bake it serves is not used
+  by zun), or drop its pre-extraction and verify every existing file.
+- *What a content manifest would cost (to make shared caches safe, or to detect tampering in a private one):* write
+  `.manifest` (sorted `<sha256>  <relpath>` of every file plus symlink targets) when a tree is extracted, store its hash
+  in the stamp, and re-hash the tree before each build uses it. Measured on the dev machine: `vendor/` (19 deps, about
+  370 MB, 18k files) and the debug-asan WebKit tree (1.9 GB, 2.7k files). Re-hashing `vendor/boringssl` (243 MB) took
+  1.3 s wall with a warm page cache, so a full check is on the order of 5–15 s per build warm and much more cold, plus
+  ~100 lines in `download.ts`/`fetch-cli.ts`. That check is only meaningful if the manifest itself is in a place the
+  attacker can't write (else they rewrite both), so it does not by itself make a shared writable cache safe; a
+  read-only, root-owned or content-addressed store would. Cheaper alternatives: re-extract every tree in release builds
+  (pins already make that safe; costs the WebKit extraction, ~10–30 s), or check the manifest only for release profiles.
+  Recommendation: keep "own cache is trusted, shared caches unsupported" for now, and re-extract from verified archives
+  in release builds when the release pipeline exists.
+
 **Still open:** SBOM per build (gap 8), release provenance (gap 9), mise toolchain verification (gap 7, row 10),
 GPG/attestation verification beyond sha256 (LLVM `.jsonl` attestation, Node's signed SHASUMS).
 
