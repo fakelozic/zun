@@ -111,3 +111,77 @@ test "std.lang.Optimize: new tags; old names are decls, not tags" {
     try testing.expect(m == std.lang.Optimize.Debug); // deprecated decl, still compares
     try testing.expectEqual(.fast, std.lang.Optimize.fromString("ReleaseFast").?);
 }
+
+// --- More std/language moves found while porting zun (docs/status/zig-017.md) -----
+
+test "ArrayList has a non-defaulted pointer_stability field: literals must set it" {
+    // `.{ .items = &.{}, .capacity = 0 }` is "missing struct field: pointer_stability".
+    var l: std.ArrayList(u8) = .{ .items = &.{}, .capacity = 0, .pointer_stability = .{} };
+    try l.append(testing.allocator, 1);
+    defer l.deinit(testing.allocator);
+    try testing.expectEqual(1, l.items.len);
+}
+
+test "ErrorSet info is { error_names: ?[]const [:0]const u8 }" {
+    const E = error{ A, OutOfMemory };
+    const names = @typeInfo(E).error_set.error_names.?;
+    // Order is NOT declaration order (it follows the global error table), so search.
+    var found = false;
+    for (names) |n| found = found or std.mem.eql(u8, n, "OutOfMemory");
+    try testing.expect(found and names.len == 2);
+    try testing.expect(@typeInfo(anyerror).error_set.error_names == null);
+}
+
+test "EnumSet and bit_set.Integer: .empty / .full replace initEmpty() / initFull()" {
+    const S = std.enums.EnumSet(enum { a, b });
+    try testing.expectEqual(0, (S.empty).count());
+    try testing.expectEqual(2, (S.full).count());
+    try testing.expectEqual(0xff, std.bit_set.Integer(8).full.mask);
+}
+
+const TwoBytes = extern struct { lo: u8, hi: u8 };
+test "punning an extern struct: bytesToValue(toBytes(x)) (what bun.memCast does)" {
+    // `@as(u16, @bitCast(TwoBytes{...}))` is a compile error in 0.17.
+    const v: u16 = std.mem.bytesToValue(u16, &std.mem.toBytes(TwoBytes{ .lo = 0x34, .hi = 0x12 }));
+    try testing.expectEqual(0x1234, v); // little-endian host
+    const back = std.mem.bytesToValue(TwoBytes, &std.mem.toBytes(@as(u16, 0xabcd)));
+    try testing.expectEqual(0xab, back.hi);
+    comptime std.debug.assert(std.mem.bytesToValue(u16, &std.mem.toBytes(TwoBytes{ .lo = 1, .hi = 0 })) == 1); // works at comptime
+}
+
+test "@bitCast on byte arrays and bool vectors still matches the old result on little-endian" {
+    const a: [4]u8 = .{ 1, 2, 3, 4 };
+    try testing.expectEqual(0x04030201, @as(u32, @bitCast(a)));
+    const m: @Vector(4, bool) = .{ true, false, false, true };
+    try testing.expectEqual(0b1001, @as(u4, @bitCast(@as(@Vector(4, u1), @bitCast(m)))));
+}
+
+test "@bitSizeOf: fine on ints/packed, but a compile error on auto-layout structs" {
+    // `@bitSizeOf(struct { a: usize })` -> "no bit size available for type" (0.16 returned @sizeOf*8).
+    try testing.expectEqual(12, @bitSizeOf(packed struct { a: u4, b: u8 }));
+    try testing.expectEqual(64, @sizeOf(struct { a: usize }) * 8);
+}
+
+test "std.meta.declarations returns names; Allocator.dupeSentinel, fmt.bufPrintSentinel, @Int" {
+    const S = struct {
+        pub const x = 1;
+    };
+    try testing.expectEqualStrings("x", std.meta.declarations(S)[0]);
+    const z = try testing.allocator.dupeSentinel(u8, "ab", 0);
+    defer testing.allocator.free(z);
+    try testing.expectEqual(0, z[2]);
+    var buf: [8]u8 = undefined;
+    const p = try std.fmt.bufPrintSentinel(&buf, "{d}", .{7}, 0);
+    try testing.expectEqual(0, p.ptr[p.len]);
+    try testing.expect(@Int(.unsigned, 7) == u7);
+}
+
+test "linux: x86_64's fstatat syscall is named newfstatat; wait4 takes *i32" {
+    const linux = std.os.linux;
+    if (@import("builtin").target.cpu.arch == .x86_64) {
+        try testing.expect(!@hasField(linux.SYS, "fstatat64"));
+        try testing.expect(@hasField(linux.SYS, "newfstatat"));
+    }
+    const W = @typeInfo(@TypeOf(linux.wait4)).@"fn";
+    try testing.expect(W.param_types[1].? == *i32);
+}
