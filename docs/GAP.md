@@ -101,8 +101,11 @@ recorded runs, like PGO), `--trim` (`src/trim`), `bun run --aot`, `bun test --ao
 - Code: `src/aot` (291k Rust). Inside it: `lower/` (AST → IR), `ir/`, `emit/`, `link/`,
   `engine/`, `standalone/`, and the `bun_aot_builtins` / `bun_aot_interface` crates.
 - It depends on `bun_sema` (the type checker), so **AoT can't come before `check`**.
-- How the IR becomes machine code isn't documented in the crate. It probably involves
-  Bun's WebKit fork. Task T7 finds out.
+- **How the IR becomes machine code** (T7, `docs/plan/aot.md`): the Rust front end sends an SSA IR (406 ops, one shared schema)
+  through one C entry point, `Bun__AOT__compile` (`src/jsc/bindings/BunAOTCompile.cpp`), into an **AoT engine inside Oven's WebKit fork**
+  (`Source/JavaScriptCore/aot`, about 750k lines of C++, with its own x86-64/ARM64 back end; not B3, FTL or LLVM). Compiled code runs as normal JSC objects on JSC's GC heap.
+- **Plan for zun:** reuse that engine through its C interface and write only a Zig front end that emits the IR. Hard prerequisite:
+  move to the newer WebKit (`32300d4`) built with AoT, which means porting zun's C++ bindings to the newer JSC. `check` is only needed for the typed stage.
 - User docs: `docs/compiler/*.mdx` in canary (aot, types, compatibility, size, explain, troubleshooting).
 
 ## 6. Zig toolchain gap
