@@ -1,6 +1,6 @@
 # TQ-9 IPv6 addresses lose compression and endpoint scopes
 
-- **Status** — Prepared, not yet built. TQ-9 remains open pending runtime verification.
+- **Status** — **Fixed and verified 2026-11-27** (built; `test-zun-ipv6-format.js` passes, gate green).
 - **Severity** — Low, security-relevant for applications that compare peer address strings against access rules.
 - **Found by / date** — Parity harness, 2026-11-26. Reproduced on 2026-11-27.
 
