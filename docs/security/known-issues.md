@@ -3,6 +3,20 @@
 Issues found in code zun ships, open until fixed. Each entry: what, impact, where, how found, plan.
 Fixed entries move to the bottom with the commit that fixed them.
 
+## HTTP client (fetch / node:http client) response framing: found 2026-11-26 (H5 sibling search)
+
+### SIB-H5-a: lax Content-Length / TE+CL / Connection handling in the fetch response parser, open
+
+- `src/http/http.zig` `handleResponseMetadata`: an invalid `Content-Length` is read as **0**
+  (`parseInt(...) catch 0`), and duplicate CLs are last-wins. With TE + CL, chunked framing wins but keep-alive is
+  **not** turned off (RFC 9112 6.3). Only an exact single `Connection: close` value is honoured
+  (`keep-alive, close` is missed).
+- Impact: a malicious or compromised origin can leave bytes on a pooled keep-alive connection that the next response
+  *from the same origin* then reads (response desync within that origin's pool). TE lists themselves are safe
+  (anything but a single known coding is `UnsupportedTransferEncoding`).
+- Plan: compare with Bun 1.4.5's Rust client and backport strict CL (reject invalid or differing values) and
+  close-on-TE+CL. Details: `docs/rca/H5-serve-http1-smuggling.md` § Sibling search.
+
 ## md (`Bun.markdown`, `.md` imports): restored 2026-11-26
 
 Threat model: markdown passed to `Bun.markdown.*` or imported as `.md` may be **untrusted** (user content
