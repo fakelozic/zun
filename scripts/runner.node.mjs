@@ -72,6 +72,29 @@ let isQuiet = false;
 const cwd = import.meta.dirname ? dirname(import.meta.dirname) : process.cwd();
 const testsPath = join(cwd, "test");
 
+/**
+ * zun (HARNESS-1): LeakSanitizer matches `test/leaksan.supp` entries by *function name*, so it needs a symbolizer.
+ * Without one, every suppressed leak (e.g. `uws_create_app`) is reported and the test aborts, so results depended on
+ * whether the caller's PATH happened to contain llvm-symbolizer. Resolve it here: ASAN_SYMBOLIZER_PATH if set, else the
+ * pinned toolchain in vendor/, else PATH. If none exists, fail loudly instead of reporting bogus leaks.
+ * @returns {string}
+ */
+const asanSymbolizer = (() => {
+  let resolved;
+  return () => {
+    if (resolved !== undefined) return resolved;
+    const candidates = [process.env.ASAN_SYMBOLIZER_PATH, join(cwd, "vendor/llvm-21.1.8/bin/llvm-symbolizer")];
+    for (const dir of (process.env.PATH ?? "").split(":").filter(Boolean)) candidates.push(join(dir, "llvm-symbolizer"));
+    resolved = candidates.find(c => c && existsSync(c));
+    if (!resolved) {
+      throw new Error(
+        "LeakSanitizer validation needs llvm-symbolizer (to apply test/leaksan.supp); set ASAN_SYMBOLIZER_PATH or install the pinned LLVM in vendor/",
+      );
+    }
+    return resolved;
+  };
+})();
+
 const spawnTimeout = 5_000;
 const spawnBunTimeout = 20_000; // when running with ASAN/LSAN bun can take a bit longer to exit, not a bug.
 const testTimeout = 3 * 60_000;
@@ -640,6 +663,7 @@ async function runTests() {
               env.ASAN_OPTIONS = "allow_user_segv_handler=1:disable_coredump=0:detect_leaks=1:abort_on_error=1";
               // prettier-ignore
               env.LSAN_OPTIONS = `malloc_context_size=100:print_suppressions=0:suppressions=${process.cwd()}/test/leaksan.supp`;
+              env.ASAN_SYMBOLIZER_PATH = asanSymbolizer();
             }
             return runTest(title, async () => {
               const { ok, error, stdout, crashes } = await spawnBun(execPath, {
@@ -1404,6 +1428,7 @@ async function spawnBunTest(execPath, testPath, opts = { cwd }) {
     env.ASAN_OPTIONS = "allow_user_segv_handler=1:disable_coredump=0:detect_leaks=1:abort_on_error=1";
     // prettier-ignore
     env.LSAN_OPTIONS = `malloc_context_size=100:print_suppressions=0:suppressions=${process.cwd()}/test/leaksan.supp`;
+    env.ASAN_SYMBOLIZER_PATH = asanSymbolizer();
   }
 
   const { ok, error, stdout, crashes } = await spawnBun(execPath, {
