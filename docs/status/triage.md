@@ -22,6 +22,10 @@ Resolved since the first triage:
 - **TQ-1** (fetch didn't stream; 21 http/https/http2 client timeouts) → fixed with **FETCH-1** in `825ac11`, after this
   parity run's snapshot (`413dec6`). See `docs/rca/FETCH-1-fetch-bridge-drops-tls-config.md`. Re-check cluster 4 and
   `test-http-econnrefused` in the next parity run.
+  **Re-checked 2026-11-26 on `825ac11`:** of the 29 tests that timed out in the 15:44 run, **20 now pass**. Still failing
+  (likely other causes, triage next): `test-cluster-eaddrinuse`, `test-cluster-worker-no-exit` (probably TQ-8),
+  `test-process-exit-code-validation`, `test-http-outgoing-finish`, `test-http-server-stale-close`, `test-v8-serialize-leak`,
+  `test-http2-forget-closed-streams`, `test-http2-misbehaving-flow-control`, `test-http2-misbehaving-flow-control-paused`.
 
 - **TQ-6** (sanitizer report + exit 0 counted as a pass): **done, policy changed.** `scripts/parity.ts` now gives such
   runs their own `SANITIZER` status and counts them as failures (36 in the 2026-11-26 15:44 run, all Worker-related,
