@@ -577,6 +577,23 @@ pub const NetAddress = extern union {
             else => unreachable,
         };
     }
+    pub fn fromSocket(fd: std.posix.fd_t, comptime endpoint: enum { local, peer }) ?NetAddress {
+        var storage: std.posix.sockaddr.storage = undefined;
+        var len: std.c.socklen_t = @sizeOf(@TypeOf(storage));
+        const get = switch (endpoint) {
+            .local => std.c.getsockname,
+            .peer => std.c.getpeername,
+        };
+        if (get(fd, @ptrCast(&storage), &len) != 0) return null;
+        if (len < @sizeOf(@TypeOf(storage.family))) return null;
+        switch (storage.family) {
+            std.posix.AF.INET => if (len < @sizeOf(std.posix.sockaddr.in)) return null,
+            std.posix.AF.INET6 => if (len < @sizeOf(std.posix.sockaddr.in6)) return null,
+            else => return null,
+        }
+        return initPosix(@ptrCast(&storage));
+    }
+
     pub fn getPort(self: NetAddress) u16 {
         return switch (self.any.family) {
             std.posix.AF.INET => std.mem.bigToNative(u16, self.in.sa.port),
@@ -584,23 +601,24 @@ pub const NetAddress = extern union {
             else => unreachable,
         };
     }
-    pub fn format(self: NetAddress, writer: anytype) !void {
-        switch (self.any.family) {
-            std.posix.AF.INET => {
-                const bytes: [4]u8 = @bitCast(self.in.sa.addr);
-                try writer.print("{d}.{d}.{d}.{d}:{d}", .{ bytes[0], bytes[1], bytes[2], bytes[3], self.getPort() });
-            },
-            std.posix.AF.INET6 => {
-                try writer.writeAll("[");
-                var i: usize = 0;
-                while (i < 16) : (i += 2) {
-                    if (i != 0) try writer.writeAll(":");
-                    try writer.print("{x}", .{std.mem.readInt(u16, self.in6.sa.addr[i..][0..2], .big)});
-                }
-                try writer.print("]:{d}", .{self.getPort()});
-            },
-            else => unreachable,
-        }
+    pub fn formatHost(self: NetAddress, writer: *std.Io.Writer) std.Io.Writer.Error!void {
+        const bytes: *const anyopaque = switch (self.any.family) {
+            std.posix.AF.INET => &self.in.sa.addr,
+            std.posix.AF.INET6 => &self.in6.sa.addr,
+            else => return error.WriteFailed,
+        };
+        var buf: [46]u8 = undefined; // INET6_ADDRSTRLEN, including the terminator.
+        const host = @import("bun").c_ares.ares_inet_ntop(self.any.family, bytes, &buf, buf.len) orelse
+            return error.WriteFailed;
+        try writer.writeAll(std.mem.span(host));
+    }
+
+    pub fn format(self: NetAddress, writer: *std.Io.Writer) std.Io.Writer.Error!void {
+        const ipv6 = self.any.family == std.posix.AF.INET6;
+        if (ipv6) try writer.writeByte('[');
+        try self.formatHost(writer);
+        if (ipv6) try writer.writeByte(']');
+        try writer.print(":{d}", .{self.getPort()});
     }
 };
 

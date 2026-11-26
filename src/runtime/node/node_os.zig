@@ -625,12 +625,8 @@ fn networkInterfacesPosix(globalThis: *jsc.JSGlobalObject) bun.JSError!jsc.JSVal
             const addr_str = bun.fmt.formatIp(addr, &buf) catch unreachable;
             var cidr = jsc.JSValue.null;
             if (maybe_suffix) |suffix| {
-                //NOTE addr_str might not start at buf[0] due to slicing in formatIp
-                const start = @intFromPtr(addr_str.ptr) - @intFromPtr(&buf[0]);
-                // Start writing the suffix immediately after the address
-                const suffix_str = std.fmt.bufPrint(buf[start + addr_str.len ..], "/{}", .{suffix}) catch unreachable;
-                // The full cidr value is the address + the suffix
-                const cidr_str = buf[start .. start + addr_str.len + suffix_str.len];
+                const suffix_str = std.fmt.bufPrint(buf[addr_str.len..], "/{}", .{suffix}) catch unreachable;
+                const cidr_str = buf[0 .. addr_str.len + suffix_str.len];
                 cidr = jsc.ZigString.init(cidr_str).withEncoding().toJS(globalThis);
             }
 
@@ -766,12 +762,8 @@ fn networkInterfacesWindows(globalThis: *jsc.JSGlobalObject) bun.JSError!jsc.JSV
                 &ip_buf,
             ) catch unreachable;
             if (maybe_suffix) |suffix| {
-                //NOTE addr_str might not start at buf[0] due to slicing in formatIp
-                const start = @intFromPtr(addr_str.ptr) - @intFromPtr(&ip_buf[0]);
-                // Start writing the suffix immediately after the address
-                const suffix_str = std.fmt.bufPrint(ip_buf[start + addr_str.len ..], "/{}", .{suffix}) catch unreachable;
-                // The full cidr value is the address + the suffix
-                const cidr_str = ip_buf[start .. start + addr_str.len + suffix_str.len];
+                const suffix_str = std.fmt.bufPrint(ip_buf[addr_str.len..], "/{}", .{suffix}) catch unreachable;
+                const cidr_str = ip_buf[0 .. addr_str.len + suffix_str.len];
                 cidr = jsc.ZigString.init(cidr_str).withEncoding().toJS(globalThis);
             }
 

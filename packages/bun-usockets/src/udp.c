@@ -75,24 +75,8 @@ int us_udp_socket_bound_port(struct us_udp_socket_t *s) {
     return ((struct us_udp_socket_t *) s)->port;
 }
 
-void us_udp_socket_bound_ip(struct us_udp_socket_t *s, char *buf, int *length) {
-  struct bsd_addr_t addr;
-  if (bsd_local_addr(us_poll_fd((struct us_poll_t *)s), &addr) || *length < bsd_addr_get_ip_length(&addr)) {
-    *length = 0;
-  } else {
-    *length = bsd_addr_get_ip_length(&addr);
-    memcpy(buf, bsd_addr_get_ip(&addr), *length);
-  }
-}
-
-void us_udp_socket_remote_ip(struct us_udp_socket_t *s, char *buf, int *length) {
-  struct bsd_addr_t addr;
-  if (bsd_remote_addr(us_poll_fd((struct us_poll_t *)s), &addr) || *length < bsd_addr_get_ip_length(&addr)) {
-    *length = 0;
-  } else {
-    *length = bsd_addr_get_ip_length(&addr);
-    memcpy(buf, bsd_addr_get_ip(&addr), *length);
-  }
+LIBUS_SOCKET_DESCRIPTOR us_udp_socket_get_fd(struct us_udp_socket_t *s) {
+    return us_poll_fd(&s->p);
 }
 
 void *us_udp_socket_user(struct us_udp_socket_t *udp) {

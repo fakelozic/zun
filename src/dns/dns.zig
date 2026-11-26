@@ -241,25 +241,10 @@ pub const GetAddrInfo = struct {
 };
 pub fn addressToString(address: *const bun.compat.NetAddress) bun.OOM!bun.String {
     switch (address.any.family) {
-        std.posix.AF.INET => {
-            var self = address.in;
-            const bytes = @as(*const [4]u8, @ptrCast(&self.sa.addr));
-            return String.createFormat("{}.{}.{}.{}", .{
-                bytes[0],
-                bytes[1],
-                bytes[2],
-                bytes[3],
-            });
-        },
-        std.posix.AF.INET6 => {
-            var stack = bun.allocators.stackFallback(512, default_allocator);
-            const allocator = stack.get();
-            var out = try allocator.print("{f}", .{address.*});
-            defer allocator.free(out);
-            // TODO: this is a hack, fix it
-            // This removes [.*]:port
-            //              ^  ^^^^^^
-            return String.cloneLatin1(out[1 .. out.len - 1 - std.fmt.count("{d}", .{address.in6.getPort()}) - 1]);
+        std.posix.AF.INET, std.posix.AF.INET6 => {
+            var buf: [46]u8 = undefined;
+            const host = bun.fmt.formatIp(address.*, &buf) catch return String.empty;
+            return String.cloneLatin1(host);
         },
         std.posix.AF.UNIX => {
             if (comptime @hasField(bun.compat.NetAddress, "un")) {
@@ -293,4 +278,3 @@ const std = @import("std");
 const bun = @import("bun");
 const JSError = bun.JSError;
 const String = bun.String;
-const default_allocator = bun.default_allocator;

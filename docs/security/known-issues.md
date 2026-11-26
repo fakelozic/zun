@@ -68,6 +68,14 @@ rendered by a server). Review scope: `src/md/*.zig`, `src/runtime/api/MarkdownOb
 
 ## Runtime (found during the md restore)
 
+### TQ-9 IPv6 peer address presentation (Low), **fixed 2026-11-27** (built; `test-zun-ipv6-format.js` passes)
+
+Cruller's Zig 0.16 compatibility formatter expanded IPv6 addresses and rendered IPv4-mapped addresses with
+hexadecimal tails. TCP endpoints also inherited the loss of the interface scope from the byte-only uSockets
+accessors. Applications comparing peer addresses to literal access rules can get a different result from Node.
+The patch reuses c-ares formatting and reads complete endpoint sockaddrs.
+[TQ-9 RCA](../rca/TQ-9-ipv6-format.md).
+
 ### RT-3 / TQ-3: Worker threads end with `pthread_exit` inside live C++ frames (all builds), **fixed 2026-11-27**
 
 - **fixed and verified 2026-11-27**: re-ran all 82 Worker / sanitizer-flagged parity tests under ASAN: all 47 that ASAN flagged (35 SANITIZER + 11 CRASH:asan-check + 1 SANITIZER:asan) now pass with no ASAN report; the 21 earlier passes still pass; the 12 FAIL / 1 panic / 1 timeout are unchanged (behaviour gaps, TQ-7). Nested-worker tests (`test-worker-nested-uncaught`, `-nested-on-process-exit`, `-terminate-nested`) pass under ASAN. **Unconfirmed lead** from an interrupted independent review: a possible lifetime issue when a nested Worker's parent context goes away first; not reproduced, worth a targeted test.

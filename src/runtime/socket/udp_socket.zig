@@ -953,31 +953,23 @@ pub const UDPSocket = struct {
         return JSValue.jsNumber(this.socket.?.boundPort());
     }
 
-    fn createSockAddr(globalThis: *JSGlobalObject, address_bytes: []const u8, port: u16) JSValue {
-        var sockaddr = SocketAddress.init(address_bytes, port) catch return .js_undefined;
-        return sockaddr.intoDTO(globalThis) catch .js_undefined;
+    fn createSockAddr(globalThis: *JSGlobalObject, address: bun.compat.NetAddress) JSValue {
+        var buf: [64]u8 = undefined;
+        const host = bun.fmt.formatScopedIp(address, &buf) catch return .js_undefined;
+        return SocketAddress.createDTO(globalThis, host, address.getPort(), address.any.family == std.posix.AF.INET6) catch .js_undefined;
     }
 
     pub fn getAddress(this: *This, globalThis: *JSGlobalObject) JSValue {
         if (this.closed) return .js_undefined;
-        var buf: [64]u8 = @splat(0);
-        var length: i32 = 64;
-        this.socket.?.boundIp(&buf, &length);
-
-        const address_bytes = buf[0..@as(usize, @intCast(length))];
-        const port = this.socket.?.boundPort();
-        return createSockAddr(globalThis, address_bytes, @intCast(port));
+        const address = bun.compat.NetAddress.fromSocket(this.socket.?.fd().native(), .local) orelse return .js_undefined;
+        return createSockAddr(globalThis, address);
     }
 
     pub fn getRemoteAddress(this: *This, globalThis: *jsc.JSGlobalObject) jsc.JSValue {
         if (this.closed) return .js_undefined;
-        const connect_info = this.connect_info orelse return .js_undefined;
-        var buf: [64]u8 = @splat(0);
-        var length: i32 = 64;
-        this.socket.?.remoteIp(&buf, &length);
-
-        const address_bytes = buf[0..@as(usize, @intCast(length))];
-        return createSockAddr(globalThis, address_bytes, connect_info.port);
+        if (this.connect_info == null) return .js_undefined;
+        const address = bun.compat.NetAddress.fromSocket(this.socket.?.fd().native(), .peer) orelse return .js_undefined;
+        return createSockAddr(globalThis, address);
     }
 
     pub fn getBinaryType(

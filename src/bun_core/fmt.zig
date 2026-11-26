@@ -1359,20 +1359,28 @@ pub fn enumTagList(comptime Enum: type, comptime separator: @EnumLiteral()) Enum
 }
 
 pub fn formatIp(address: bun.compat.NetAddress, into: []u8) ![]u8 {
-    // bun.compat.NetAddress.format includes `:<port>` and square brackets (IPv6)
-    //  while Node does neither.  This uses format then strips these to bring
-    //  the result into conformance with Node.
-    var result = try std.fmt.bufPrint(into, "{f}", .{address});
+    var writer: std.Io.Writer = .fixed(into);
+    try address.formatHost(&writer);
+    return writer.buffered();
+}
 
-    // Strip `:<port>`
-    if (std.mem.lastIndexOfScalar(u8, result, ':')) |colon| {
-        result = result[0..colon];
+/// Node TCP and UDP endpoints include the interface identifier on scoped link-local addresses.
+pub fn formatScopedIp(address: bun.compat.NetAddress, into: []u8) ![]u8 {
+    var writer: std.Io.Writer = .fixed(into);
+    try address.formatHost(&writer);
+    if (address.any.family == std.posix.AF.INET6) {
+        const sa = address.in6.sa;
+        const ip: std.Io.net.Ip6Address = .{ .bytes = sa.addr, .port = 0 };
+        if (sa.scope_id != 0 and ip.isLinkLocal()) {
+            var name: [bun.c.IF_NAMESIZE]u8 = @splat(0);
+            if (bun.c.if_indextoname(sa.scope_id, &name) != null) {
+                try writer.print("%{s}", .{std.mem.sliceTo(&name, 0)});
+            } else {
+                try writer.print("%{d}", .{sa.scope_id});
+            }
+        }
     }
-    // Strip brackets
-    if (result[0] == '[' and result[result.len - 1] == ']') {
-        result = result[1 .. result.len - 1];
-    }
-    return result;
+    return writer.buffered();
 }
 
 // https://lemire.me/blog/2021/06/03/computing-the-number-of-digits-of-an-integer-even-faster/
