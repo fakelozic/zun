@@ -120,6 +120,32 @@ rendered by a server). Review scope: `src/md/*.zig`, `src/runtime/api/MarkdownOb
 - **Plan:** RCA + fix as Bun 1.4.5 does (empty store when `ca` is given), regression test with a default-trusted peer
   and an unrelated valid `ca` (needs a build; queued after the CLI restore). Until fixed: **do not rely on `ca` pinning**.
 
+### TLS-ID-1 (review F-3, F-4, F-5): fetch TLS identity policy is applied too late, to the wrong socket or not at all (High), open, confirmed
+
+- Confirmed at runtime on 2026-11-26. Details, repros and output are in `review-2026-11-26-verify-F.md`, and the scripts
+  are in `test/js/node/test/fixtures/zun-review-F/`. Bun 1.4.5 is correct unless marked otherwise.
+  - **F-3:** a fresh connection with a rejecting `checkServerIdentity` still sends the full request (auth header and
+    body) before rejecting. Bun sends 0 bytes. (backports H6(b))
+  - **F-4:** a keep-alive socket is reused for a request with `checkServerIdentity` without running the callback. A
+    socket whose callback **rejected** is repooled and reused. The `Host` header changes the verified name, but the
+    pool key doesn't include it. (backports H2(b))
+  - **F-5:** TLS over a unix socket ignores `tls.ca`/`cert`/`key`. Through a proxy, the inner SNI uses the URL host
+    while verification uses `serverName`. *Shared with Bun 1.4.5:* the HTTPS proxy hop gets the origin's client cert
+    and trusts the origin's `ca`.
+- **Until fixed:** don't rely on `checkServerIdentity` to keep secrets away from a server, and don't pin with
+  `tls.ca` over `unix:`.
+- **Plan:** one RCA per mechanism, then fixes. These need a build.
+
+### H2C-1: fetch's HTTP/2 client writes byte-reversed frame headers (functional), open
+
+- Every `fetch(..., {protocol: "http2"})` fails with `HTTP2ProtocolError`. Frame headers go out as the 9 bytes
+  reversed, because `std.mem.byteSwapAllFields` on the `packed struct(u72)` `FrameHeader` swaps the whole backing
+  integer in Zig 0.17.1 (`docs/zig/lessons.md`, probe `docs/zig/probes/byteswap-packed/`). The affected code is
+  `src/http/h2_client/ClientSession.zig` `writeFrame`, the read path `FrameHeader.from(..., true)`, and
+  `src/runtime/api/bun/h2_frame_parser.zig`.
+- It isn't a security hole in itself (the peer drops the connection), but it blocks testing F-4's H2 half.
+- **Plan:** RCA, then write and read header fields explicitly big-endian, with an h2 interop test against `node:http2`.
+
 ### RT-4: `__crullerHandle` SSR dispatch drops JS exceptions (dormant), open
 
 - `src/rt/jsc_engine.zig` `callHandler` / `src/rt/server_dispatch.zig:59`: a throw in `globalThis.__crullerHandle`

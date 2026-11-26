@@ -136,3 +136,15 @@ Found in TQ-3 (`docs/rca/TQ-3-worker-thread-exit-under-asan.md`). Two verified f
   an exiting `std.Thread` makes ASAN try to unmap TLS (`failed to deallocate 0x40000 … error code: 22`). Turn it off
   per build with `.signal_stack_size = if (asan) null else (std.Options{}).signal_stack_size` (probe:
   `probes/signal-stack/options.zig`).
+
+## 2026-11-26: `std.mem.byteSwapAllFields` on a packed struct reverses the whole backing integer
+
+In 0.17.1, `byteSwapAllFields` is a deprecated alias of `std.mem.byteSwap`. For a struct with a backing integer
+(any `packed struct`), `byteSwapAligned` does `@byteSwap` on the **whole** `uN`. It does not swap each field. So a
+packed `FrameHeader { length: u24, type: u8, flags: u8, streamIdentifier: u32 }` with length 0x12 and type 4 comes out as
+`00 00 00 00 00 04 00 00 12`, the wire bytes in reverse, not `00 00 12 04 00 00 00 00 00`. Only `extern` structs are
+swapped field by field. Probe: `probes/byteswap-packed/byteswap.zig`, run with `zig test`. This broke zun's HTTP/2
+client (security `known-issues.md` H2C-1). **Do:** to serialize a wire header, write each field with
+`std.mem.writeInt(..., .big)` (or use an `extern struct` of byte arrays), and never byte-swap a packed struct to get
+network order.
+
