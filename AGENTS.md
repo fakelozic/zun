@@ -27,6 +27,13 @@ Start with `docs/ROADMAP.md` and `docs/GAP.md`.
      the operator sets explicitly (`ZUN_CRASH_REPORT_URL`); there is never a built-in default endpoint.
    - Note any security-relevant change in the commit message (`security:` prefix), and log known issues in `docs/security/`.
 
+7. **Root cause, not quick fix.** When something breaks or behaves oddly, find out *why* before changing code.
+   Every bug fix comes with a short root-cause analysis (RCA) in `docs/rca/<id>-<slug>.md` (template: `docs/rca/TEMPLATE.md`):
+   symptom and reproduction → root cause (the actual mechanism, and the commit that introduced it, via `git log -S`/bisect) →
+   why our tests didn't catch it → the fix and why it addresses the cause, not the symptom → a regression test →
+   **sibling search**: other places with the same pattern, fixed or listed. Workarounds, skipped tests, retries, wider timeouts or
+   suppressions are not fixes. If a real fix is out of scope, record the RCA and leave the bug visibly open; don't paper over it.
+
 ## Where things are
 
 | Path | What |
