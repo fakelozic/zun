@@ -170,7 +170,7 @@ fn cpusImplLinux(globalThis: *jsc.JSGlobalObject) !jsc.JSValue {
         const cpu = try values.getIndex(globalThis, @truncate(cpu_index));
 
         var path_buf: [128]u8 = undefined;
-        const path = try std.fmt.bufPrintZ(&path_buf, "/sys/devices/system/cpu/cpu{}/cpufreq/scaling_cur_freq", .{cpu_index});
+        const path = try std.fmt.bufPrintSentinel(&path_buf, "/sys/devices/system/cpu/cpu{}/cpufreq/scaling_cur_freq", .{cpu_index}, 0);
         if (bun.sys.File.open(path, bun.O.RDONLY, 0).unwrap()) |file| {
             defer file.close();
 

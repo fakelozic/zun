@@ -72,7 +72,7 @@ pub fn isExternContainer(comptime T: type) bool {
 
 pub fn isConstPtr(comptime T: type) bool {
     const info = @typeInfo(T);
-    return info == .pointer and info.pointer.is_const;
+    return info == .pointer and info.pointer.attrs.@"const";
 }
 
 pub fn isIndexable(comptime T: type) bool {

@@ -1290,7 +1290,7 @@ pub fn getcwd(out_buffer: []u8) ![]u8 {
 pub fn getcwdAlloc(allocator: std.mem.Allocator) ![:0]u8 {
     var temp: PathBuffer = undefined;
     const temp_slice = try getcwd(&temp);
-    return allocator.dupeZ(u8, temp_slice);
+    return allocator.dupeSentinel(u8, temp_slice, 0);
 }
 
 /// TODO: move to bun.sys and add a method onto FD
@@ -1608,7 +1608,7 @@ pub fn reloadProcess(
 
     const dupe_argv = allocator.allocSentinel(?[*:0]const u8, bun.argv.len, null) catch unreachable;
     for (bun.argv, dupe_argv) |src, *dest| {
-        dest.* = (allocator.dupeZ(u8, src) catch unreachable).ptr;
+        dest.* = (allocator.dupeSentinel(u8, src, 0) catch unreachable).ptr;
     }
 
     const environ_slice = std.mem.span(std.c.environ);
@@ -1617,7 +1617,7 @@ pub fn reloadProcess(
         if (src == null) {
             dest.* = null;
         } else {
-            dest.* = (allocator.dupeZ(u8, sliceTo(src.?, 0)) catch unreachable).ptr;
+            dest.* = (allocator.dupeSentinel(u8, sliceTo(src.?, 0), 0) catch unreachable).ptr;
         }
     }
 
@@ -2896,13 +2896,13 @@ pub fn iterateDir(dir: FD) DirIterator.Iterator {
 }
 
 fn ReinterpretSliceType(comptime T: type, comptime slice: type) type {
-    const is_const = @typeInfo(slice).pointer.is_const;
+    const is_const = @typeInfo(slice).pointer.attrs.@"const";
     return if (is_const) []const T else []T;
 }
 
 /// Zig has a todo for @ptrCast changing the `.len`. This is the workaround
 pub fn reinterpretSlice(comptime T: type, slice: anytype) ReinterpretSliceType(T, @TypeOf(slice)) {
-    const is_const = @typeInfo(@TypeOf(slice)).pointer.is_const;
+    const is_const = @typeInfo(@TypeOf(slice)).pointer.attrs.@"const";
     const bytes = std.mem.sliceAsBytes(slice);
     const new_ptr = @as(if (is_const) [*]const T else [*]T, @ptrCast(@alignCast(bytes.ptr)));
     return new_ptr[0..@divTrunc(bytes.len, @sizeOf(T))];

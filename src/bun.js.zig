@@ -552,7 +552,7 @@ pub fn runEntryFile(allocator: std.mem.Allocator, entry_path: [:0]const u8) !voi
         .result => |path| path,
         .err => return error.SystemResources,
     };
-    const absolute_entry_path = try allocator.dupeZ(u8, bun.path.joinAbsString(cwd, &.{entry_path}, .auto));
+    const absolute_entry_path = try allocator.dupeSentinel(u8, bun.path.joinAbsString(cwd, &.{entry_path}, .auto), 0);
 
     const log = try allocator.create(logger.Log);
     log.* = logger.Log.init(allocator);

@@ -100,7 +100,7 @@ pub const Host = struct {
             self.completeError(command, errorCode(.INVAL), .{});
             return;
         }
-        const path = self.allocator.dupeZ(u8, path_bytes) catch {
+        const path = self.allocator.dupeSentinel(u8, path_bytes, 0) catch {
             self.completeError(command, errorCode(.NOMEM), .{});
             return;
         };

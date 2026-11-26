@@ -32,7 +32,7 @@ pub const PointerInfo = struct {
     }
 
     pub fn isConst(self: Self) bool {
-        return @typeInfo(self.NonOptionalPointer).pointer.is_const;
+        return @typeInfo(self.NonOptionalPointer).pointer.attrs.@"const";
     }
 
     pub const ParseOptions = struct {

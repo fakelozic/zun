@@ -477,7 +477,7 @@ pub fn GlobWalker_(
                         //
                         // In that case we don't need to do any walking and can just open up the FS entry
                         if (starting_component_idx >= this.walker.patternComponents.items.len) {
-                            const path = try this.walker.arena.allocator().dupeZ(u8, path_without_special_syntax);
+                            const path = try this.walker.arena.allocator().dupeSentinel(u8, path_without_special_syntax, 0);
                             const fd = switch (try Accessor.open(path)) {
                                 .err => |e| {
                                     if (e.getErrno() == bun.sys.E.NOTDIR) {
@@ -687,7 +687,7 @@ pub fn GlobWalker_(
                         defer this.closeDisallowingCwd(fd);
                         const stackbuf_size = 256;
                         var stfb = bun.allocators.stackFallback(stackbuf_size, this.walker.arena.allocator());
-                        const pathz = try stfb.get().dupeZ(u8, this.walker.patternComponents.items[idx].patternSlice(this.walker.pattern));
+                        const pathz = try stfb.get().dupeSentinel(u8, this.walker.patternComponents.items[idx].patternSlice(this.walker.pattern), 0);
                         const stat_result: bun.Stat = switch (Accessor.statat(fd, pathz)) {
                             .err => |e_| {
                                 var e: bun.sys.Error = e_;
@@ -938,7 +938,7 @@ pub fn GlobWalker_(
 
                                     const stackbuf_size = 256;
                                     var stfb = bun.allocators.stackFallback(stackbuf_size, this.walker.arena.allocator());
-                                    const name_z = bun.handleOom(stfb.get().dupeZ(u8, entry_name));
+                                    const name_z = bun.handleOom(stfb.get().dupeSentinel(u8, entry_name, 0));
                                     const stat_result = Accessor.lstatat(dir.fd, name_z);
                                     const real_kind = switch (stat_result) {
                                         .result => |st| bun.sys.kindFromMode(@intCast(st.mode)),
@@ -1499,7 +1499,7 @@ pub fn GlobWalker_(
                 result.key_ptr.* = matchedPathToBunString(slice);
                 return slice;
             }
-            const slicez = try this.arena.allocator().dupeZ(u8, symlink_full_path);
+            const slicez = try this.arena.allocator().dupeSentinel(u8, symlink_full_path, 0);
             result.key_ptr.* = matchedPathToBunString(slicez);
             return slicez;
         }

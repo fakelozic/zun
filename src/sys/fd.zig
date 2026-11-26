@@ -718,7 +718,7 @@ const fd_t = std.posix.fd_t;
 // bzrt: std.os.getFdPath removed in 0.16 — readlink /proc/self/fd/N
 fn getFdPathViaProc(fd_native: anytype, buf: *[std.fs.max_path_bytes]u8) error{FileNotFound}![]u8 {
     var proc_buf: [64]u8 = undefined;
-    const proc = std.fmt.bufPrintZ(&proc_buf, "/proc/self/fd/{d}", .{fd_native}) catch return error.FileNotFound;
+    const proc = std.fmt.bufPrintSentinel(&proc_buf, "/proc/self/fd/{d}", .{fd_native}, 0) catch return error.FileNotFound;
     const rc = std.os.linux.readlink(proc, buf, buf.len);
     const signed: isize = @bitCast(rc);
     if (signed < 0) return error.FileNotFound;
