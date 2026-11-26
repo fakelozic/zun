@@ -147,7 +147,7 @@ rendered by a server). Review scope: `src/md/*.zig`, `src/runtime/api/MarkdownOb
   1.4.5 and Node 26; passes on the fixed build).
   HTTP/3 ignores `ca` entirely; that is F-2, separate.
 
-### TLS-ID-1 (review F-3, F-4, F-5): fetch TLS identity policy is applied too late, to the wrong socket or not at all (High), **fix prepared (branch `t3/fix-fetch-tls-identity`), unverified**
+### TLS-ID-1 (review F-3, F-4, F-5): fetch TLS identity policy is applied too late, to the wrong socket or not at all (High), **fixed 2026-11-27** (built; `test-zun-fetch-tls-identity.mjs` passes; WebSocket upgrade ordering H6(c) still open)
 
 - Confirmed at runtime on 2026-11-26. Details, repros and output are in `review-2026-11-26-verify-F.md`, and the scripts
   are in `test/js/node/test/fixtures/zun-review-F/`. Bun 1.4.5 is correct unless marked otherwise.

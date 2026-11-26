@@ -1,6 +1,6 @@
 # TLS-ID-1: fetch applies its TLS identity policy too late, to the wrong socket, or not at all
 
-- **Status:** **fix prepared (branch `t3/fix-fetch-tls-identity`), not yet built or verified.** The regression test
+- **Status:** **fixed and verified 2026-11-27** (built; `test-zun-fetch-tls-identity.mjs` passes, gate green incl. HTTP/2 interop). Earlier note: The regression test
   fails on the pre-fix snapshot (`build/snap-ffd9f0b`) and passes on Bun 1.4.5.
 - **Severity:** high, security-relevant. Credentials and request bodies reach a server that the request's own
   `checkServerIdentity` rejects; a pinning callback can be bypassed through the keep-alive pool; `tls.ca` pinning is
