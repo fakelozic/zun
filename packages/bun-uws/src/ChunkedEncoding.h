@@ -70,7 +70,13 @@ namespace uWS {
      *   chunk-ext-name = token
      *   chunk-ext-val  = token / quoted-string  (TODO: quoted-string unsupported)
      */
-    inline uint64_t consumeHexNumber(std::string_view &data, uint64_t state) {
+    /* chunkExtensionsConsumed (optional): incremented for every chunk-extension
+     * byte consumed on the current chunk-size line; reset to 0 when a fresh
+     * chunk-size line starts, matching llhttp/Node's on_chunk_header which resets
+     * chunk_extensions_nread_ per chunk (not per message). The caller enforces the
+     * cap (HttpParser::MAX_CHUNK_EXTENSION_SIZE).
+     * zun H5 backport from Bun 1.4.5 (Bun #32488 counter, #34504 Bun.serve cap). */
+    inline uint64_t consumeHexNumber(std::string_view &data, uint64_t state, uint64_t *chunkExtensionsConsumed = nullptr) {
         /* Resume: '\r' was the last byte of the previous segment. Rare path,
          * use data directly to avoid the p/len load on the hot path. */
         if (state & STATE_WAITING_FOR_LF) [[unlikely]] {
@@ -80,6 +86,14 @@ namespace uWS {
             data.remove_prefix(1);
             return ((state & ~(STATE_WAITING_FOR_LF | STATE_IS_CHUNKED_EXTENSION | STATE_HAS_HEXDIG)) + 2)
                    | STATE_HAS_SIZE | STATE_IS_CHUNKED;
+        }
+
+        /* Fresh chunk-size line (not a resume): reset the per-chunk extension
+         * counter, mirroring Node's on_chunk_header. The caller's overflow check
+         * runs after the previous chunk's data is emitted, so it has already seen
+         * that chunk's count by the time this reset fires. */
+        if (chunkExtensionsConsumed && !(state & (STATE_IS_CHUNKED_EXTENSION | STATE_HAS_HEXDIG))) {
+            *chunkExtensionsConsumed = 0;
         }
 
         /* Load pointer+length into locals so the loops operate in registers.
@@ -127,6 +141,9 @@ namespace uWS {
             }
             if (c <= 32) return STATE_IS_ERROR;
             state |= STATE_IS_CHUNKED_EXTENSION;
+            if (chunkExtensionsConsumed) {
+                ++*chunkExtensionsConsumed;
+            }
         }
         data = std::string_view(p, len);
         return state; /* short read */
@@ -150,7 +167,7 @@ namespace uWS {
     }
 
     /* Returns next chunk (empty or not), or if all data was consumed, nullopt is returned. */
-    static std::optional<std::string_view> getNextChunk(std::string_view &data, uint64_t &state, bool trailer = false) {
+    static std::optional<std::string_view> getNextChunk(std::string_view &data, uint64_t &state, bool trailer = false, uint64_t *chunkExtensionsConsumed = nullptr) {
         while (data.length()) {
 
             // if in "drop trailer mode", consume the terminator bytes after the
@@ -184,7 +201,7 @@ namespace uWS {
             }
 
             if (!hasChunkSize(state)) {
-                state = consumeHexNumber(data, state);
+                state = consumeHexNumber(data, state, chunkExtensionsConsumed);
                 if (isParsingInvalidChunkedEncoding(state)) [[unlikely]] {
                     return std::nullopt;
                 }
@@ -306,12 +323,13 @@ namespace uWS {
         std::optional<std::string_view> chunk;
         uint64_t *state;
         bool trailer;
+        uint64_t *chunkExtensionsConsumed;
 
-        ChunkIterator(std::string_view *data, uint64_t *state, bool trailer = false) : data(data), state(state), trailer(trailer) {
-            chunk = uWS::getNextChunk(*data, *state, trailer);
+        ChunkIterator(std::string_view *data, uint64_t *state, bool trailer = false, uint64_t *chunkExtensionsConsumed = nullptr) : data(data), state(state), trailer(trailer), chunkExtensionsConsumed(chunkExtensionsConsumed) {
+            chunk = uWS::getNextChunk(*data, *state, trailer, chunkExtensionsConsumed);
         }
 
-        ChunkIterator() {
+        ChunkIterator() : data(nullptr), state(nullptr), trailer(false), chunkExtensionsConsumed(nullptr) {
 
         }
 
@@ -335,7 +353,7 @@ namespace uWS {
         }
 
         ChunkIterator &operator++() {
-            chunk = uWS::getNextChunk(*data, *state, trailer);
+            chunk = uWS::getNextChunk(*data, *state, trailer, chunkExtensionsConsumed);
             return *this;
         }
 

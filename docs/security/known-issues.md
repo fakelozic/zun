@@ -3,6 +3,20 @@
 Issues found in code zun ships, open until fixed. Each entry: what, impact, where, how found, plan.
 Fixed entries move to the bottom with the commit that fixed them.
 
+## HTTP client (fetch / node:http client) response framing: found 2026-11-26 (H5 sibling search)
+
+### SIB-H5-a: lax Content-Length / TE+CL / Connection handling in the fetch response parser, open
+
+- `src/http/http.zig` `handleResponseMetadata`: an invalid `Content-Length` is read as **0**
+  (`parseInt(...) catch 0`), and duplicate CLs are last-wins. With TE + CL, chunked framing wins but keep-alive is
+  **not** turned off (RFC 9112 6.3). Only an exact single `Connection: close` value is honoured
+  (`keep-alive, close` is missed).
+- Impact: a malicious or compromised origin can leave bytes on a pooled keep-alive connection that the next response
+  *from the same origin* then reads (response desync within that origin's pool). TE lists themselves are safe
+  (anything but a single known coding is `UnsupportedTransferEncoding`).
+- Plan: compare with Bun 1.4.5's Rust client and backport strict CL (reject invalid or differing values) and
+  close-on-TE+CL. Details: `docs/rca/H5-serve-http1-smuggling.md` § Sibling search.
+
 ## md (`Bun.markdown`, `.md` imports): restored 2026-11-26
 
 Threat model: markdown passed to `Bun.markdown.*` or imported as `.md` may be **untrusted** (user content
@@ -174,6 +188,18 @@ re-verification of the cached chain in the same change. Source: `review-2026-11-
   `phr_decode_chunked` returns > 0 (`src/http/http.zig:2712`, `:2794`). See `review-2026-11-26-verify-H1.md`. A
   related H2 note: zun also reuses an idle pooled socket that received unsolicited bytes, where Bun 1.4.5 opens a new
   one.
+
+### H5-1: `Bun.serve` keeps the connection open after an async response to a `Connection: close` request (Low), open
+
+- **What:** request with `Connection: close` + an async handler: the response is sent, later pipelined bytes are discarded
+  (the H5 smuggling fix holds: `/b` never reaches the handler), but the server never closes the socket. Bun 1.4.5 closes.
+- **Impact:** RFC 9112 9.6 violation; idle sockets held until the client or the idle timeout closes them (resource use, no
+  request smuggling).
+- **Mechanism (from code reading, to confirm in the RCA):** `HTTP_CONNECTION_CLOSE` is set (`HttpContext.h:308`), but the
+  close happens only in the response-end paths when the socket is *not corked* (`HttpResponse.h:148`, `:214`) and in the
+  synchronous-return path (`HttpContext.h:437`). An async response ended while corked is uncorked later without that check.
+  Bun 1.4.5 handles it with the cork/drain changes of #42986, which the H5 backport left out on purpose.
+- **Test:** `test-zun-serve-close-after-async.mjs` (fails on zun, passes on Bun 1.4.5); not in the gate until fixed.
 
 ### RT-4: `__crullerHandle` SSR dispatch drops JS exceptions (dormant), open
 

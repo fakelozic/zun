@@ -65,6 +65,12 @@ namespace uWS
         HTTP_PARSER_ERROR_INVALID_EOF = 8,
         HTTP_PARSER_ERROR_INVALID_METHOD = 9,
         HTTP_PARSER_ERROR_INVALID_HEADER_TOKEN = 10,
+        /* 11 is HTTP_PARSER_ERROR_LF_EXPECTED in Bun 1.4.5 (not backported); the
+         * value is left unused so these codes keep matching Bun 1.4.5's numbering,
+         * which node:http's clientError mapping (src/js/node/_http_server.ts) reads. */
+        /* The chunk extensions of a single chunk exceeded the 16 KiB limit
+         * (Node/llhttp's HPE_CHUNK_EXTENSIONS_OVERFLOW). zun H5 backport (Bun #34504). */
+        HTTP_PARSER_ERROR_CHUNK_EXTENSIONS_OVERFLOW = 12,
     };
 
 
@@ -236,12 +242,62 @@ namespace uWS
             return std::string_view(nullptr, 0);
         }
 
+        /* RFC 9112 9.6: "close" is a case-insensitive token in the Connection list.
+         * zun H5 backport (Bun #33005). Replaces the old
+         * getHeader("connection").length() == 5 test, which read only the first
+         * Connection field, missed "keep-alive, close", and matched any 5-byte value. */
+        bool hasConnectionClose()
+        {
+            if (!bf.mightHave("connection")) {
+                return false;
+            }
+            for (Header *h = headers; (++h)->key.length();) {
+                if (h->key.length() != 10 || strncasecmp(h->key.data(), "connection", 10)) {
+                    continue;
+                }
+                const auto value = h->value;
+                size_t pos = 0;
+                while (pos < value.length()) {
+                    while (pos < value.length() && (value[pos] == ' ' || value[pos] == '\t')) {
+                        pos++;
+                    }
+                    size_t tokenStart = pos;
+                    while (pos < value.length() && value[pos] != ',') {
+                        pos++;
+                    }
+                    size_t tokenEnd = pos;
+                    while (tokenEnd > tokenStart && (value[tokenEnd - 1] == ' ' || value[tokenEnd - 1] == '\t')) {
+                        tokenEnd--;
+                    }
+                    if (tokenEnd - tokenStart == 5 && !strncasecmp(value.data() + tokenStart, "close", 5)) {
+                        return true;
+                    }
+                    if (pos < value.length()) {
+                        pos++;
+                    }
+                }
+            }
+            return false;
+        }
+
         struct TransferEncoding {
             bool has: 1 = false;
             bool chunked: 1 = false;
             bool invalid: 1 = false;
+            /* More than one coding token was named across all Transfer-Encoding
+             * fields (e.g. "gzip, chunked" or a "gzip" field plus a "chunked"
+             * field). The server implements no transfer coding other than chunked,
+             * so the extra coding would be silently dropped and the still-encoded
+             * body handed to the app; reject it (RFC 9112 6.1).
+             * zun H5 backport (Bun #35295). */
+            bool multipleCodings: 1 = false;
         };
 
+        /* zun H5 backport of Bun 1.4.5's getTransferEncoding (Bun #31339 round-4
+         * hardening: TE present even when empty; #35295: chunked must be the only
+         * and final coding). The node:http-only leniency fields of 1.4.5
+         * (nonEmptyValue, afterContentLength, lenientChunked) are not backported:
+         * zun's node:http server shares this parser and gets the strict verdict. */
         TransferEncoding getTransferEncoding()
         {
             TransferEncoding te;
@@ -250,13 +306,23 @@ namespace uWS
                 return te;
             }
 
+            bool seenAnyCoding = false;
             for (Header *h = headers; (++h)->key.length();) {
-                if (h->key.length() == 17 && !strncmp(h->key.data(), "transfer-encoding", 17)) {
+                if (h->key.length() == 17 && !strncasecmp(h->key.data(), "transfer-encoding", 17)) {
+                    /* Present even when the value names no transfer coding: treating
+                     * an empty/whitespace-only field as absent would fall back to
+                     * Content-Length framing (request smuggling; RFC 9112 6.3). */
+                    te.has = true;
+
+                    /* An earlier Transfer-Encoding field already named "chunked": any
+                     * later TE field (even one with an empty value) is invalid. */
+                    if (te.chunked) [[unlikely]] {
+                        te.invalid = true;
+                    }
+
                     // Parse comma-separated values, ensuring "chunked" is last if present
                     const auto value = h->value;
                     size_t pos = 0;
-                    size_t lastTokenStart = 0;
-                    size_t lastTokenLen = 0;
 
                     while (pos < value.length()) {
                         // Skip leading whitespace
@@ -280,26 +346,24 @@ namespace uWS
 
                         size_t tokenLen = tokenEnd - tokenStart;
                         if (tokenLen > 0) {
-                            lastTokenStart = tokenStart;
-                            lastTokenLen = tokenLen;
+                            /* A prior coding (from this or an earlier TE field) was
+                             * "chunked": chunked MUST be the final coding (RFC 9112
+                             * 6.1), so any token after it is invalid ("chunked, chunked"
+                             * too, like llhttp). */
+                            if (te.chunked) [[unlikely]] {
+                                te.invalid = true;
+                            }
+                            if (seenAnyCoding) {
+                                te.multipleCodings = true;
+                            }
+                            seenAnyCoding = true;
+                            te.chunked = tokenLen == 7 && strncasecmp(value.data() + tokenStart, "chunked", 7) == 0;
                         }
 
                         // Move past comma if present
                         if (pos < value.length() && value[pos] == ',') {
                             pos++;
                         }
-                    }
-
-                    if (te.chunked) [[unlikely]] {
-                        te.invalid = true;
-                        return te;
-                    }
-
-                    te.has = lastTokenLen > 0;
-
-                    // Check if the last token is "chunked"
-                    if (lastTokenLen == 7 && strncasecmp(value.data() + lastTokenStart, "chunked", 7) == 0) [[likely]] {
-                        te.chunked = true;
                     }
                 }
             }
@@ -391,10 +455,29 @@ namespace uWS
 
     private:
         std::string fallback;
+    public:
+        /* A request on this connection had Connection: close or was HTTP/1.0
+         * (RFC 9112 9.6): no further request may be dispatched on it. Read by
+         * HttpContext::onData to mark the response for close.
+         * zun H5 backport (Bun #33005). */
+        bool sawConnectionClose = false;
+    private:
+        /* Chunk-extension bytes consumed on the current chunk-size line, reset per
+         * chunk (llhttp's on_chunk_header). Bun 1.4.5 keeps this in HttpResponseData
+         * and passes a pointer; zun keeps it on the parser (HttpResponseData derives
+         * from HttpParser, so it is still per connection) to avoid changing
+         * consumePostPadded's signature. zun H5 backport (Bun #34504). */
+        uint64_t chunkedExtensionsByteCount = 0;
          /* This guy really has only 30 bits since we reserve two highest bits to chunked encoding parsing state */
         uint64_t remainingStreamingBytes = 0;
 
         const size_t MAX_FALLBACK_SIZE = BUN_DEFAULT_MAX_HTTP_HEADER_SIZE;
+
+        /* Maximum chunk-extension bytes per chunk, matching Node/llhttp's
+         * kMaxChunkExtensionsSize (16 KiB). Enforced so a client cannot stream
+         * unbounded extension bytes that maxRequestBodySize never sees.
+         * zun H5 backport (Bun #34504). */
+        static const uint64_t MAX_CHUNK_EXTENSION_SIZE = 16 * 1024;
 
         /* Returns UINT64_MAX on error. Maximum 999999999 is allowed. */
         static uint64_t toUnsignedInteger(std::string_view str) {
@@ -836,6 +919,14 @@ namespace uWS
         data[length + 1] = 'a'; /* Anything that is not \n, to trigger "invalid request" */
         req->ancientHttp = false;
         for (;length;) {
+            /* RFC 9112 9.6: after a request with Connection: close (or HTTP/1.0) the
+             * server MUST NOT process further requests on this connection. Discard
+             * everything after it (no 400: the earlier response must still go out).
+             * The close-flagged request's own body was consumed in its iteration.
+             * zun H5 backport (Bun #33005). */
+            if (sawConnectionClose) {
+                return HttpParserResult::success(consumedTotal + length, user);
+            }
             auto result = getHeaders(data, data + length, req->headers, reserved, req->ancientHttp, isConnectRequest, useStrictMethodValidation, maxHeaderSize);
             if(result.isError()) {
                 return result;
@@ -859,6 +950,10 @@ namespace uWS
 
             for (HttpRequest::Header *h = req->headers; (++h)->key.length(); ) {
                 req->bf.add(h->key);
+            }
+            /* Latch before the handler runs, so an async handler gets the same discard. */
+            if (req->isAncient() || req->hasConnectionClose()) {
+                sawConnectionClose = true;
             }
             /* Break if no host header (but we can have empty string which is different from nullptr) */
             if (!req->ancientHttp && requireHostHeader && !req->getHeader("host").data()) {
@@ -896,7 +991,22 @@ namespace uWS
             /* Check Transfer-Encoding header validity and conflicts */
             HttpRequest::TransferEncoding transferEncoding = req->getTransferEncoding();
 
-            transferEncoding.invalid = transferEncoding.invalid || (transferEncoding.has && (contentLengthStringLen || !transferEncoding.chunked));
+            /* RFC 9112 6.1: Transfer-Encoding was introduced in HTTP/1.1. A server that
+             * receives an HTTP/1.0 message containing a Transfer-Encoding header field
+             * MUST treat the message as if the framing is faulty and close the connection
+             * after processing the message. Reject it outright, consistent with the TE+CL
+             * and non-chunked TE rejections below. zun H5 backport (Bun #35864). */
+            if (req->ancientHttp && transferEncoding.has) [[unlikely]] {
+                return HttpParserResult::error(HTTP_ERROR_400_BAD_REQUEST, HTTP_PARSER_ERROR_INVALID_TRANSFER_ENCODING);
+            }
+
+            /* No transfer coding other than chunked is implemented, so a list that ends
+             * in chunked but also names another coding ("gzip, chunked", "x, chunked",
+             * two TE fields) would hand the still-encoded body to the app. Reject it.
+             * zun H5 backport (Bun #35295). */
+            transferEncoding.invalid = transferEncoding.invalid
+                || (transferEncoding.has && (contentLengthStringLen || !transferEncoding.chunked))
+                || transferEncoding.multipleCodings;
 
             if (transferEncoding.invalid) [[unlikely]] {
                 /* Invalid Transfer-Encoding (multiple headers or chunked not last - request smuggling attempt) */
@@ -943,12 +1053,21 @@ namespace uWS
             if (transferEncoding.has) {
                 /* We already validated that chunked is last if present, before calling the handler */
                 remainingStreamingBytes = STATE_IS_CHUNKED;
+                chunkedExtensionsByteCount = 0;
                 /* If consume minimally, we do not want to consume anything but we want to mark this as being chunked */
                 if constexpr (!ConsumeMinimally) {
                     /* Go ahead and parse it (todo: better heuristics for emitting FIN to the app level) */
                     std::string_view dataToConsume(data, length);
-                    for (auto chunk : uWS::ChunkIterator(&dataToConsume, &remainingStreamingBytes)) {
+                    for (auto chunk : uWS::ChunkIterator(&dataToConsume, &remainingStreamingBytes, false, &chunkedExtensionsByteCount)) {
+                        /* llhttp errors at the offending extension byte, before any body bytes from
+                         * that chunk reach the application; check before every dispatch. */
+                        if (chunkedExtensionsByteCount > MAX_CHUNK_EXTENSION_SIZE) [[unlikely]] {
+                            return HttpParserResult::error(HTTP_ERROR_413_PAYLOAD_TOO_LARGE, HTTP_PARSER_ERROR_CHUNK_EXTENSIONS_OVERFLOW);
+                        }
                         dataHandler(user, chunk, chunk.length() == 0);
+                    }
+                    if (chunkedExtensionsByteCount > MAX_CHUNK_EXTENSION_SIZE) [[unlikely]] {
+                        return HttpParserResult::error(HTTP_ERROR_413_PAYLOAD_TOO_LARGE, HTTP_PARSER_ERROR_CHUNK_EXTENSIONS_OVERFLOW);
                     }
                     if (isParsingInvalidChunkedEncoding(remainingStreamingBytes)) [[unlikely]] {
                         // TODO: what happen if we already responded?
@@ -1003,8 +1122,14 @@ public:
             } else if (isParsingChunkedEncoding(remainingStreamingBytes)) {
                  /* It's either chunked or with a content-length */
                 std::string_view dataToConsume(data, length);
-                for (auto chunk : uWS::ChunkIterator(&dataToConsume, &remainingStreamingBytes)) {
+                for (auto chunk : uWS::ChunkIterator(&dataToConsume, &remainingStreamingBytes, false, &chunkedExtensionsByteCount)) {
+                    if (chunkedExtensionsByteCount > MAX_CHUNK_EXTENSION_SIZE) [[unlikely]] {
+                        return HttpParserResult::error(HTTP_ERROR_413_PAYLOAD_TOO_LARGE, HTTP_PARSER_ERROR_CHUNK_EXTENSIONS_OVERFLOW);
+                    }
                     dataHandler(user, chunk, chunk.length() == 0);
+                }
+                if (chunkedExtensionsByteCount > MAX_CHUNK_EXTENSION_SIZE) [[unlikely]] {
+                    return HttpParserResult::error(HTTP_ERROR_413_PAYLOAD_TOO_LARGE, HTTP_PARSER_ERROR_CHUNK_EXTENSIONS_OVERFLOW);
                 }
                 if (isParsingInvalidChunkedEncoding(remainingStreamingBytes)) {
                     return HttpParserResult::error(HTTP_ERROR_400_BAD_REQUEST, HTTP_PARSER_ERROR_INVALID_CHUNKED_ENCODING);
@@ -1066,8 +1191,14 @@ public:
                     } else if (isParsingChunkedEncoding(remainingStreamingBytes)) {
                         /* It's either chunked or with a content-length */
                         std::string_view dataToConsume(data, length);
-                        for (auto chunk : uWS::ChunkIterator(&dataToConsume, &remainingStreamingBytes)) {
+                        for (auto chunk : uWS::ChunkIterator(&dataToConsume, &remainingStreamingBytes, false, &chunkedExtensionsByteCount)) {
+                            if (chunkedExtensionsByteCount > MAX_CHUNK_EXTENSION_SIZE) [[unlikely]] {
+                                return HttpParserResult::error(HTTP_ERROR_413_PAYLOAD_TOO_LARGE, HTTP_PARSER_ERROR_CHUNK_EXTENSIONS_OVERFLOW);
+                            }
                             dataHandler(user, chunk, chunk.length() == 0);
+                        }
+                        if (chunkedExtensionsByteCount > MAX_CHUNK_EXTENSION_SIZE) [[unlikely]] {
+                            return HttpParserResult::error(HTTP_ERROR_413_PAYLOAD_TOO_LARGE, HTTP_PARSER_ERROR_CHUNK_EXTENSIONS_OVERFLOW);
                         }
                         if (isParsingInvalidChunkedEncoding(remainingStreamingBytes)) {
                             return HttpParserResult::error(HTTP_ERROR_400_BAD_REQUEST, HTTP_PARSER_ERROR_INVALID_CHUNKED_ENCODING);
