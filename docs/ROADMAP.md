@@ -50,6 +50,9 @@ Details: `docs/security/`.
 - [ ] Release build passes the relevant Bun tests, plus sanitizer runs and fuzzing on network parsers with no open findings.
 - [ ] Advisory watch and backport process in place, and has been exercised at least once.
 - [ ] Deployed behind a reverse proxy, rolled out gradually, with a tested switch back to Bun.
+- [ ] All Critical and High items in `docs/security/backports.md` closed (as of SEC1: C1 brotli RCE, C2 compromised emSign roots, H1–H9).
+- [ ] WebKit/JSC upgraded to at least Bun 1.4.5's pin (`d6375c72`). The current 2026-05-12 build lacks 29 or more known JSC CVEs. Then follow Bun's pin monthly, using checksum-pinned prebuilts.
+- [ ] Supply-chain gaps closed: checksums for the WebKit prebuilt, the LLVM tarball, dependency archives and Node headers; no unverified prefetch cache (`docs/security/supply-chain.md`).
 
 ## Phase 0: Study ✅ (Milestone 1)
 
@@ -148,7 +151,7 @@ macOS first, then Windows, then FreeBSD. All three were removed by cruller, and 
 4. Node target version for `process.version` (Bun 1.3.14 reports 24.3.0).
 5. N-API: restore early (many npm packages need it) or in item 6 as planned?
 6. Go's role: only for tooling like typescript-go, or more?
-7. JSC/WebKit upgrade policy: stay on the 1.3.14 WebKit (`5488984`) until when? Canary's WebKit (`32300d4`) is needed for
+7. ~~JSC/WebKit upgrade policy~~ **Decided by the security audit (SEC1):** upgrade to Bun 1.4.5's pin after the restored runtime passes its HTTP/fetch/WebSocket tests and **before any production traffic** (now a production gate), then follow Bun monthly. Old note: stay on the 1.3.14 WebKit (`5488984`) until when? Canary's WebKit (`32300d4`) is needed for
    Node 26 compatibility, `Temporal`, the C++ Web Streams and AoT (`docs/plan/runtime-diff.md`, `docs/plan/aot.md`), so the upgrade
    is probably a planned task between Phase 4 and Phase 5, not open-ended.
 8. Go placement: link check/lint/fmt into the `zun` binary (+28 MB, about 0.6 ms startup cost on every run, one Go runtime per process, untested signal-handler interplay with JSC) or ship a companion executable?
