@@ -9,15 +9,15 @@ Regenerate the raw cut-point list with:
 grep -rn bzrt src --include='*.zig' --include='*.cpp' --include='*.h' --include='*.ts' | grep -v '^src/rt/'
 ```
 
-(168 lines at `ce9e006`.)
+(168 lines at `ce9e006`; 164 after the md restore removed 4.)
 
 ## Progress
 
 | # | Module | Status | Notes |
 |---|--------|--------|-------|
 | 1 | Prep (this ledger, recipe, gates) | ✅ 2026-11-26 | `scripts/restore-module.ts`, `src/bun_core/restore_flags.zig` |
-| 2 | `md` (`Bun.markdown`, `.md` loader) | ⏳ in progress | |
-| 3 | `cli` core | | |
+| 2 | `md` (`Bun.markdown`, `.md` loader) | ✅ 2026-11-26 | § md below |
+| 3 | `cli` core | ⏳ next | |
 | 4 | `test_runner` | | |
 | 5 | `js_parser_jsc` / `Bun.Transpiler` | | |
 | 6 | `shell` | | |
@@ -83,11 +83,11 @@ Rules:
 
 Line numbers are at the commit that last touched this table. "re-enable" = un-comment the `bzrt-cut` line.
 
-### md (item 2)
+### md ✅ (done; listed for the record)
 
 | Where | What it was | Replaced by |
 |-------|-------------|-------------|
-| `src/bun.zig:260` | `// bzrt-cut: pub const md = …` | re-enable |
+| `src/bun.zig:262` (was 260) | `// bzrt-cut: pub const md = …` | re-enabled |
 | `src/runtime/api/MarkdownObject.zig` (54-line stub, `bzrt` l.1,31) | throws "not available" | upstream file (1,292 lines) |
 | `src/bundler/transpiler.zig:1157` | `.md` loaded as text | upstream `bun.md.renderToHtml` |
 
@@ -99,19 +99,19 @@ Line numbers are at the commit that last touched this table. "re-enable" = un-co
 | `src/bun.js.zig:34,139` | bunfig loading cut |
 | `src/bun.js.zig:542,713` | minimal production loader; CLI option types kept locally |
 | `src/bun.zig:179` | `ci` (`cli/ci_info.zig`) |
-| `src/bun.zig:740` | `Bunfig` |
-| `src/bun.zig:1215-1216` | `cli` + crash-handler stand-in struct |
-| `src/bun.zig:1228` | `RunCommand` |
-| `src/bun.zig:1493` | `upgrade_command.Version` |
-| `src/bun.zig:3845-3846` | `Arguments` use (returns `false`) |
+| `src/bun.zig:742` | `Bunfig` |
+| `src/bun.zig:1217-1218` | `cli` + crash-handler stand-in struct |
+| `src/bun.zig:1230` | `RunCommand` |
+| `src/bun.zig:1495` | `upgrade_command.Version` |
+| `src/bun.zig:3847-3848` | `Arguments` use (returns `false`) |
 | `src/jsc/ConsoleObject.zig:172,3695,3800` | console depth from CLI |
 | `src/jsc/VirtualMachine.zig:56` | `HotReload` from `options_types/Context.zig` |
 | `src/jsc/rare_data.zig:936` | `EditorContext = struct {}` (`cli/open.zig`) |
 | `src/runtime/api/BunObject.zig:527,1936` | `Bun.openInEditor` |
 | `src/runtime/node/node_process.zig:2-38` | process title kept locally |
 | `src/runtime/api/bun/process.zig:132,2909,2910` | `ProcessHandle`, `MultiRunProcessHandle` |
-| `src/jsc/vm_exports_stub.zig:13-24` | `Bun__Node__ProcessNoDeprecation`, `…ThrowDeprecation`, `…UseSystemCA`, `Bun__githubURL` (real ones live in `cli/Arguments.zig` / `upgrade_command.zig`) |
-| `src/jsc/vm_exports_stub.zig:42` | `Bun__Node__ZeroFillBuffers` (**verify** where upstream defines it before deleting) |
+| `src/jsc/vm_exports_stub.zig:14-16,22` | `Bun__Node__ProcessNoDeprecation`, `…ThrowDeprecation`, `…UseSystemCA`, `Bun__githubURL` (real ones live in `cli/Arguments.zig` / `upgrade_command.zig`) |
+| `src/jsc/vm_exports_stub.zig:40` | `Bun__Node__ZeroFillBuffers`: stub is a *function* but C++ reads an `extern bool`; upstream is `export var … = false` in `cli/Arguments.zig:1709` (`docs/security/known-issues.md` RT-1) |
 
 ### test_runner (item 4)
 
@@ -119,7 +119,7 @@ Line numbers are at the commit that last touched this table. "re-enable" = un-co
 |-------|------|
 | `src/jsc/jsc.zig:121-124` | `Jest`, `TestScope`, `Expect`, `Snapshot` |
 | `src/runtime/api/BunObject.zig:24` | `jest` → `cutFeatureCallback` |
-| `src/bun.zig:3263,3276` | fake timers in `getRoughTickCount*` |
+| `src/bun.zig:3265,3278` | fake timers in `getRoughTickCount*` |
 | `src/jsc/JSValue.zig:2487`, `src/jsc/ConsoleObject.zig:3801` | `JestPrettyFormat` stand-ins |
 | `src/runtime/api/bun/js_bun_spawn_bindings.zig:1028` | test timeout |
 | `src/runtime/api/bun/process.zig:132,2911` | `TestWorkerHandle` |
@@ -143,7 +143,7 @@ Line numbers are at the commit that last touched this table. "re-enable" = un-co
 
 | Where | What |
 |-------|------|
-| `src/bun.zig:259` | `shell` |
+| `src/bun.zig:261` | `shell` |
 | `src/runtime/api.zig:61` | `Shell` |
 | `src/runtime/api/BunObject.zig:16-17,215-217,223,1931` | `createParsedShellScript`, `createShellInterpreter`, `$`, `braces` |
 | `src/bun.js.zig:141` | `.sh` entry points |
@@ -156,7 +156,7 @@ Line numbers are at the commit that last touched this table. "re-enable" = un-co
 
 | Where | What |
 |-------|------|
-| `src/bun.zig:296` | `libarchive` |
+| `src/bun.zig:298` | `libarchive` |
 | `src/runtime/api.zig:51` | `Archive` |
 | `src/runtime/webcore/Blob.zig:1658,5101` | Archive |
 | `src/runtime/api/BunObject.zig:1131` | `Bun.Archive` → `undefined` |
@@ -167,7 +167,7 @@ Line numbers are at the commit that last touched this table. "re-enable" = un-co
 
 | Where | What |
 |-------|------|
-| `src/bun.zig:1226-1227,3852` | `install`, `PackageManager`, `ConfigVersion` |
+| `src/bun.zig:1228-1229,3854` | `install`, `PackageManager`, `ConfigVersion` |
 | `src/bundler/transpiler.zig:91` | `getPackageManager` |
 | `src/resolver/package_json.zig:2159,2160,2167,2186,2190,2192` | npm metadata stubs |
 | `src/resolver/resolver.zig:4275,4276,4309,4326` | npm resolution type stubs |
@@ -188,13 +188,13 @@ Line numbers are at the commit that last touched this table. "re-enable" = un-co
 
 | Where | What |
 |-------|------|
-| `src/bun.zig:1863-1866` | `bundle_v2`, `BundleV2`, `ParseTask` (`Loader` kept from `options.zig`) |
+| `src/bun.zig:1865-1868` | `bundle_v2`, `BundleV2`, `ParseTask` (`Loader` kept from `options.zig`) |
 | `src/js_parser/ast/ImportScanner.zig:431` | bundler v2 |
 | `src/jsc/Task.zig:11,389` | `DeferredBatchTask` |
 | `src/options_types/CompileTarget.zig:495-496`, `src/options_types/schema.zig:1980` | `fromJS` helpers |
 | `src/logger/logger.zig:1283-1284` | `js_lexer` range |
-| `src/bun.zig:1956`, `src/bun.js.zig:440`, `src/resolver/resolver.zig:814`, `src/runtime/node/node_fs.zig:5872`, `src/sourcemap/Mapping.zig:270` | standalone module graph |
-| `src/bun.zig:3817-3818` | `macho`, `pe` |
+| `src/bun.zig:1958`, `src/bun.js.zig:440`, `src/resolver/resolver.zig:814`, `src/runtime/node/node_fs.zig:5872`, `src/sourcemap/Mapping.zig:270` | standalone module graph |
+| `src/bun.zig:3819-3820` | `macho`, `pe` |
 | `src/js_parser/ast/Parser.zig:1,59` | `bun.bake.Framework` stand-in |
 | `src/jsc/cut_bindings_stub.zig:34` | `Bake__bundleNewRouteJSFunctionImpl` |
 | `src/jsc/cut_bindings_stub.zig:74-92` | `JSBundlerPlugin__addError/onDefer/onLoadAsync/onResolveAsync`, `OnBeforeParsePlugin__isDone`, `OnBeforeParseResult__reset` |
@@ -219,7 +219,7 @@ Line numbers are at the commit that last touched this table. "re-enable" = un-co
 |-------|--------------|
 | `src/bun.zig:190,207`, `src/sys/sys.zig:14-18`, `src/sys/PosixStat.zig:139`, `src/sys/fd.zig:713,718`, `src/watcher/Watcher.zig:150,798`, `src/uws/uws.zig:22`, `src/runtime/socket/socket.zig:37`, `src/runtime/node.zig:7`, `src/errno/linux_errno.zig:167` | Linux-only (Phase 7) |
 | `src/bun_core/bzrt_compat.zig`, `src/meta/meta.zig:348` | Zig 0.16/0.17 compat helpers |
-| `src/bun.zig:2044` | `Stat` on Linux |
+| `src/bun.zig:2046` | `Stat` on Linux |
 | `src/jsc/btjs.zig:1` | JSC stack dumper (debug only) |
 | `src/jsc/bindings/BunProcess.cpp:239` | lolhtml note |
 | `src/resolver/resolver.zig:662` | opt-in debug break |
@@ -234,9 +234,9 @@ and no `$zig(...)` in `src/**/*.ts` names. "identical" = still byte-identical to
 
 | File | Lines | Identical | Comes back with |
 |------|------:|:---------:|-----------------|
-| `src/runtime/api/JSBundler.zig` | 2,050 | yes | item 5 (`BuildArtifact`) or 10 |
+| `src/runtime/api/JSBundler.zig` | 2,050 | yes until the md restore (codemod `arraylist-empty`) | item 5 (`BuildArtifact`) or 10 |
 | `src/runtime/api/JSTranspiler.zig` | 1,228 | | item 5 |
-| `src/runtime/server/HTMLBundle.zig` | 539 | yes | item 10 |
+| `src/runtime/server/HTMLBundle.zig` | 539 | yes until the md restore (codemod) | item 10 |
 | `src/bake/bake.zig` | 1,008 | | item 10 |
 | `src/bake/DevServer/*` (`IncrementalGraph` 2,075, `SourceMapStore` 567 identical, `ErrorReportRequest`, `DirectoryWatchStore`, `HmrSocket`, `HotReloadEvent`, `memory_cost`, `SerializedFailure`, `WatcherAtomics`, `RouteBundle`, `Assets` identical, `PackedMap` identical) | ~5,000 | some | item 10 |
 | `src/runtime/api/standalone_graph_jsc.zig` | 40 | yes | item 10 |
@@ -251,3 +251,46 @@ The scan misses files that `build.zig` registers as named modules (`src/aio/posi
 `src/zlib_sys/posix.zig` = `@import("zlib-internal")`, `build.zig:91-93`: both compiled, both left out). Verify a row before relying on it.
 Beyond the unreferenced files, **byte-identical but referenced** files (372 files, 141k lines) are fine: they were compiled.
 
+## Known problem: the current launcher hides test failures
+
+Found 2026-11-26 during the md restore; **this affects every runner-style gate until the CLI restore (item 3)**,
+which replaces cruller's launcher (`src/main.zig` → `bun.rt.monolith.Runtime`).
+
+1. **An uncaught exception in a CommonJS entry file exits 0 with no output.** `require("node:assert").strictEqual(1, 2)`
+   in a `.js` file that uses `require` → exit 0. The same in ESM (`import assert from "node:assert"`) prints the
+   error and exits 1. Plain `throw` in a file with no `require`/`module` also reports correctly.
+2. **Entry files run through the eval-source path**: `__filename` and `import.meta.path` end in `[eval]`, and for a
+   relative entry path `import.meta.dir` lacks the cwd (`/test/js/...`). The runner passes relative paths.
+3. Script arguments are not passed to `process.argv` (`zun-debug x.js a b` → `[execPath]`).
+
+Consequence: of the 7 existing gate tests, the 5 CJS ones cannot fail on an assertion. Re-running ESM copies showed
+**`test-path-extname` really fails** (`path.extname(__filename)` is `""` because `__filename` is `[eval]`), and
+`test-path-basename` asserts `path.basename(__filename) === 'test-path-basename.js'`, which must fail for the same
+reason. Both are reported as passing today. `test-bzrt-runtime-smoke`, `test-path-join` and `test-zun-identity` pass
+as ESM too; `test-path-dirname` could not be converted mechanically (it imports `../common`).
+New runner-style tests should be ESM until the launcher is replaced (`test-zun-markdown.js` is, and the runner
+fails it on a broken assertion; checked).
+
+## md
+
+Restored 2026-11-26 from `bun-v1.3.14` (`scripts/restore/md.files`, `md.lock`).
+
+- Files: `src/md/*.zig` (16 files, 10,546 lines), `src/runtime/api/MarkdownObject.zig` (1,292, replaced the stub).
+- Codemod (`fix_zig017.ts`): array-mul 4, dupe-z 1, reflection 3, **private-field 208** and **arraylist-empty 24** (36 tree-wide)
+  (both rules added for this restore; arraylist-empty also fixed the same bug in 10 never-compiled files, see above).
+  Hand fixes: 2 untyped `.list = .{}`, 2 `@memset(lists, .{})`, plus the security fixes below.
+- Wiring: `bun.md` in `src/bun.zig`; the `.md` loader in `src/bundler/transpiler.zig` renders HTML again (upstream
+  code). The C++ side (`BunMarkdownMeta.cpp`, `BunMarkdownTagStrings.cpp`, `ZigGlobalObject` structures) and the
+  `BunObject.markdown` lazy property were never cut, so no C++ or codegen change. No `.classes.ts`/`.bind.ts`.
+- Stubs removed: the 54-line throwing `MarkdownObject.zig`, the `.md`-as-text loader branch, the commented `md` decl.
+- Security: input > 4 GiB and the block-buffer offset casts are checked now (`// zun:` comments); quadratic
+  link-bracket parsing is open. `docs/security/known-issues.md` § md, `backports.md` M11.
+- Tests now: `test/js/node/test/parallel/test-zun-markdown.js` (ESM, ASAN debug build, ~16 s): API surface,
+  CommonMark `spec.txt` exact-match floor 649/652 (the 3 misses are whitespace the upstream normaliser ignores),
+  22 hostile inputs (deep nesting, delimiter bombs, 5 MB document, NUL, invalid UTF-8, lone surrogates).
+  Measured with exact compare: `spec-gfm.txt` 18/18, `regressions.txt` 36/44 (flagged examples skipped).
+- Tests once `bun:test` is back (item 4): `test/js/bun/md/md-spec.test.ts`, `gfm-compat.test.ts`,
+  `md-edge-cases.test.ts`, `md-heading-ids.test.ts`, `md-react.test.ts`, `md-render-callback.test.ts`
+  (fixtures `spec*.txt`, `regressions.txt`, `coverage.txt` in the same folder). `md-react.test.ts` and
+  `md-edge-cases.test.ts` import `react`/`react-dom`, so they also need `zun install` (item 8) or a pre-installed
+  `node_modules`. `test/cli/run/markdown-entrypoint.test.ts` needs the CLI (item 3).

@@ -104,8 +104,9 @@ restore is measured with it. Each step makes the next one testable.
 
 Order (decided 2026-11-26, from `docs/plan/restore-1.3.14.md`):
 
-1. **Prep:** stub inventory and CLI gates.
-2. **`md`** (`Bun.markdown`), which removes one CLI gate.
+1. ✅ **Prep:** stub inventory and CLI gates (2026-11-26: `docs/status/restore.md`, `scripts/restore-module.ts`, `bun.restore_flags`).
+2. ✅ **`md`** (`Bun.markdown`), which removes one CLI gate (2026-11-26: smoke test passes; quadratic link parsing open, `docs/security/known-issues.md` MD-1).
+   **Found:** cruller's launcher swallows uncaught errors in CJS entry files, so 2 of the 7 gate tests are false passes until item 3 (`docs/status/restore.md`).
 3. **CLI core** (`src/cli`): real argument parsing, subcommand skeleton, compile-time gates for commands not yet restored.
 4. **Test runner** (`src/test_runner`, `bun:test`, `internal-for-testing.ts`). 1,492 of 1,790 test files need it.
 5. **`js_parser_jsc` / `Bun.Transpiler`**: parser conformance tests early.
