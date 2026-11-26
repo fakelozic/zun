@@ -146,6 +146,14 @@ rendered by a server). Review scope: `src/md/*.zig`, `src/runtime/api/MarkdownOb
 - It isn't a security hole in itself (the peer drops the connection), but it blocks testing F-4's H2 half.
 - **Plan:** RCA, then write and read header fields explicitly big-endian, with an h2 interop test against `node:http2`.
 
+### TLS-RESUME-1: `node:tls` never resumes sessions; fixing that must ship with re-verification (parity bug, latent security), open
+
+`tls.connect({ session })` never calls `setSession`, so `isSessionReused` is always false (Node and Bun 1.4.5 resume
+against the same server). Suspected cause: `src/js/node/net.ts` applies the session only to upgraded sockets
+(unconfirmed). **When fixing:** resumed sessions keep the stored verify result (BoringSSL `reverify_on_resume` is off in
+zun and upstream), so a session made before a key was blocked (C2) or under a different `ca` would be accepted. Turn on
+re-verification of the cached chain in the same change. Source: `review-2026-11-26-verify-C2.md` (C2-3).
+
 ### RT-4: `__crullerHandle` SSR dispatch drops JS exceptions (dormant), open
 
 - `src/rt/jsc_engine.zig` `callHandler` / `src/rt/server_dispatch.zig:59`: a throw in `globalThis.__crullerHandle`

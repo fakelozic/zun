@@ -13,13 +13,18 @@
     QuoVadis 2/3, Trustwave Global (all), GTS Root R2**. Bun 1.4.5 and Node ship the same set.
   - **Operational impact:** a server whose chain only reaches a removed root now fails verification. Fix on the server
     side (reissue), or trust the root explicitly with `NODE_EXTRA_CA_CERTS` / a `ca` option on `node:tls` / `https`.
-    Note: `fetch`'s `tls.ca` is currently ignored, see open bug FETCH-1.
+    Note: an explicit `ca` is currently *added* to the defaults instead of replacing them, see TLS-CA-1.
 - **Blocked public keys:** `packages/bun-usockets/src/crypto/blocked_spkis.cpp` (from Bun 1.4.5, GHSA-26q8-h657-pf84):
   SHA-256 of the SubjectPublicKeyInfo of the **eight eMudhra intermediates** whose private keys are public. Cross-checked
   byte-for-byte against Node's `src/crypto/crypto_context.cc` at `d9a3f3d1`. Any chain that contains one of these keys
   fails with `X509_V_ERR_CERT_REVOKED`, **whatever root it chains to** (bundled, system, `NODE_EXTRA_CA_CERTS`, or `ca`).
 
 ## Where the check runs
+
+**Limits (verified 2026-11-26, `review-2026-11-26-verify-C2.md`):** the blocklist is an *overridable* `CERT_REVOKED`,
+as in Bun 1.4.5 and Node. With `rejectUnauthorized:false` a blocked chain still connects (`authorizationError:
+"CERT_REVOKED"`). The HTTP/3 server does **not** enforce client-certificate verification at all (C2-2, under H3).
+Whether zun should make blocked keys a hard failure is an open owner decision.
 
 | Path | How |
 |------|-----|
