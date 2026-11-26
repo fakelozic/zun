@@ -147,7 +147,7 @@ rendered by a server). Review scope: `src/md/*.zig`, `src/runtime/api/MarkdownOb
   1.4.5 and Node 26; passes on the fixed build).
   HTTP/3 ignores `ca` entirely; that is F-2, separate.
 
-### TLS-ID-1 (review F-3, F-4, F-5): fetch TLS identity policy is applied too late, to the wrong socket or not at all (High), open, confirmed
+### TLS-ID-1 (review F-3, F-4, F-5): fetch TLS identity policy is applied too late, to the wrong socket or not at all (High), **fix prepared (branch `t3/fix-fetch-tls-identity`), unverified**
 
 - Confirmed at runtime on 2026-11-26. Details, repros and output are in `review-2026-11-26-verify-F.md`, and the scripts
   are in `test/js/node/test/fixtures/zun-review-F/`. Bun 1.4.5 is correct unless marked otherwise.
@@ -161,7 +161,13 @@ rendered by a server). Review scope: `src/md/*.zig`, `src/runtime/api/MarkdownOb
     and trusts the origin's `ca`.
 - **Until fixed:** don't rely on `checkServerIdentity` to keep secrets away from a server, and don't pin with
   `tls.ca` over `unix:`.
-- **Plan:** one RCA per mechanism, then fixes. These need a build.
+- **Fix prepared, not yet built or verified (2026-11-27):** branch `t3/fix-fetch-tls-identity`, RCA
+  `docs/rca/TLS-ID-1-fetch-identity-ordering-and-pool.md`, regression test
+  `test/js/node/test/parallel/test-zun-fetch-tls-identity.mjs` (fails on `snap-ffd9f0b`, passes on Bun 1.4.5). It covers
+  F-3, F-4 H1 (including `Host`), F-5 unix and F-5 inner SNI. It also keeps callback requests off h2/h3 and checks
+  verification when joining h2 sessions. **Still open after it lands:** the HTTPS proxy hop gets the origin's client
+  cert and `ca` (shared with Bun 1.4.5), F-4 H2 runtime confirmation (blocked on H2C-1), and the WebSocket upgrade
+  request sent before verification (H6(c)).
 
 ### H2C-1: both HTTP/2 stacks write/read byte-reversed frame headers (functional): **fixed 2026-11-27** (built; interop with Node passes both ways; 163/163 earlier http2 passes still pass, and the 2 `misbehaving-flow-control*` timeouts now pass)
 

@@ -54,10 +54,14 @@ const log = Output.scoped(.fetch, .visible);
 pub var temp_hostname: [8192]u8 = undefined;
 
 /// Returns the hostname to use for TLS SNI and certificate verification.
-/// Priority: tls_props.server_name > client.hostname > client.url.hostname
-/// The Host header value (client.hostname) may contain a port suffix which
-/// must be stripped because it is not part of the DNS name in certificates.
-fn getTlsHostname(client: *const HTTPClient, allowProxyUrl: bool) []const u8 {
+/// Priority: tls_props.server_name > client.url.hostname.
+///
+/// zun TLS-ID-1: the `Host` header is deliberately NOT used. It is request
+/// data, not the transport identity: the keep-alive pool is keyed on the URL
+/// host, so verifying against `Host` let a request without the header inherit
+/// a verdict made for another name (review F-4). Bun 1.4.5 verifies the URL
+/// host (or `tls.serverName`) the same way.
+pub fn getTlsHostname(client: *const HTTPClient, allowProxyUrl: bool) []const u8 {
     if (allowProxyUrl) {
         if (client.http_proxy) |proxy| {
             return proxy.hostname;
@@ -69,10 +73,6 @@ fn getTlsHostname(client: *const HTTPClient, allowProxyUrl: bool) []const u8 {
             const sn_slice = bun.sliceTo(sn, 0);
             if (sn_slice.len > 0) return sn_slice;
         }
-    }
-    // client.hostname comes from the Host header and may include ":port"
-    if (client.hostname) |host| {
-        return stripPortFromHost(host);
     }
     return client.url.hostname;
 }
@@ -96,6 +96,56 @@ fn stripPortFromHost(host: []const u8) []const u8 {
     return host;
 }
 
+/// zun TLS-ID-1: how the peer on a connection was authenticated. A pooled
+/// connection is only shared between requests that authenticate the same way
+/// (a `rejectUnauthorized: false` request may take any), so a verdict from a
+/// JS `checkServerIdentity` callback is never inherited by a request relying
+/// on the native check, or the other way round. Port of Bun 1.4.5
+/// `PeerVerification` (`src/http/HTTPContext.rs`).
+pub const PeerVerification = enum(u2) {
+    /// Established with `rejectUnauthorized: false`; neither the chain nor
+    /// the hostname was enforced.
+    none = 0,
+    /// Chain verified against the CA store; identity approved by a JS
+    /// `checkServerIdentity` callback at handshake time (like Node's
+    /// `https.Agent`, the callback runs per connection, not per request).
+    callback = 1,
+    /// Chain verified and hostname matched by the native check.
+    native = 2,
+
+    /// Whether a request that verifies at `self` may take a pooled
+    /// connection verified at `pooled`.
+    pub fn admits(self: PeerVerification, pooled: PeerVerification) bool {
+        return self == .none or self == pooled;
+    }
+
+    pub fn max(a: PeerVerification, b: PeerVerification) PeerVerification {
+        return @enumFromInt(@max(@intFromEnum(a), @intFromEnum(b)));
+    }
+};
+
+/// How this request authenticates the target's TLS peer on a fresh handshake.
+pub fn targetVerification(client: *const HTTPClient) PeerVerification {
+    if (!client.flags.reject_unauthorized) return .none;
+    if (client.signals.get(.cert_errors)) return .callback;
+    return .native;
+}
+
+/// How this request authenticates the peer of its outer socket on a fresh
+/// handshake. An HTTPS proxy's own certificate always takes the native path.
+pub fn socketVerification(client: *const HTTPClient) PeerVerification {
+    if (client.http_proxy != null) {
+        return if (client.flags.reject_unauthorized) .native else .none;
+    }
+    return client.targetVerification();
+}
+
+/// `PooledSocket.verification` to record when releasing the outer socket: a
+/// lax request that reused a stricter socket must not downgrade it.
+pub fn pooledSocketVerification(client: *const HTTPClient) PeerVerification {
+    return client.flags.reused_socket_verification.max(client.socketVerification());
+}
+
 pub fn checkServerIdentity(
     client: *HTTPClient,
     comptime is_ssl: bool,
@@ -111,7 +161,13 @@ pub fn checkServerIdentity(
 
                 // check if we need to report the error (probably to `checkServerIdentity` was informed from JS side)
                 // this is the slow path
-                if (client.signals.get(.cert_errors)) {
+                //
+                // The JS callback only applies to the *target's* certificate
+                // (Node semantics, Bun 1.4.5). An HTTPS proxy's own handshake
+                // uses the native check: a pinning callback written for the
+                // target would reject the proxy's certificate.
+                const is_proxy_certificate = allowProxyUrl and client.http_proxy != null;
+                if (!is_proxy_certificate and client.signals.get(.cert_errors)) {
                     // clone the relevant data
                     const cert_size = BoringSSL.i2d_X509(x509, null);
                     const cert = bun.handleOom(bun.default_allocator.alloc(u8, @intCast(cert_size)));
@@ -128,6 +184,16 @@ pub fn checkServerIdentity(
                             .reason = bun.handleOom(bun.default_allocator.dupeSentinel(u8, certError.reason, 0)),
                         },
                     };
+
+                    // zun TLS-ID-1 (review F-3): park the connection until the
+                    // JS `checkServerIdentity` callback approves this
+                    // certificate. `onWritable` / `onData` / the proxy tunnel
+                    // honour the flag; the JS thread resumes us through
+                    // `HTTPThread.scheduleCertCheckResume` on success, or
+                    // schedules a shutdown on failure. Before this, the
+                    // request (headers, credentials, body) was written while
+                    // the callback had not run yet.
+                    client.state.flags.is_waiting_for_cert_check = true;
 
                     // we inform the user that the cert is invalid
                     client.progressUpdate(is_ssl, client.getSslCtx(is_ssl), socket);
@@ -236,6 +302,11 @@ pub fn onOpen(
 /// `BUN_FEATURE_FLAG_EXPERIMENTAL_HTTP2_CLIENT` env var, or
 /// `protocol: "http2"` on the fetch options.
 pub fn canOfferH2(client: *const HTTPClient) bool {
+    // zun TLS-ID-1: the h2 session transmits from `attach()` without the
+    // `is_waiting_for_cert_check` park gate, and h2 sessions are joined on
+    // host/port/context only, so requests with a JS `checkServerIdentity`
+    // callback stay on HTTP/1.1 (Bun 1.4.5 does the same).
+    if (client.signals.get(.cert_errors)) return false;
     if (client.flags.force_http1) return false;
     if (client.http_proxy != null) return false;
     if (client.flags.is_preconnect_only) return false;
@@ -265,12 +336,27 @@ pub fn h3AltSvcEnabled() bool {
 /// specific protocol). When true, `start_()` consults `H3.AltSvc.lookup`
 /// before opening TCP.
 pub fn canTryH3AltSvc(client: *const HTTPClient) bool {
+    // zun TLS-ID-1 (sibling): the h3 client never runs `checkServerIdentity`
+    // or a custom TLS context, so an opportunistic Alt-Svc upgrade would
+    // silently drop the request's identity policy. Stay on TCP (Bun 1.4.5).
+    if (client.hasTlsOptionsUnsupportedByH3()) return false;
     if (client.flags.force_http1 or client.flags.force_http2) return false;
     if (client.http_proxy != null) return false;
     if (client.flags.is_preconnect_only) return false;
     if (client.unix_socket_path.length() > 0) return false;
     if (client.state.original_request_body == .sendfile) return false;
     return h3AltSvcEnabled();
+}
+
+/// zun TLS-ID-1 (sibling): TLS options the HTTP/3 client cannot honour: a JS
+/// `checkServerIdentity` callback, or a config that needs its own context
+/// (`ca`, client cert, ...). Same as Bun 1.4.5 `has_tls_options_unsupported_by_h3`.
+fn hasTlsOptionsUnsupportedByH3(client: *const HTTPClient) bool {
+    if (client.signals.get(.cert_errors)) return true;
+    if (client.tls_props) |tls| {
+        if (tls.get().requires_custom_request_ctx) return true;
+    }
+    return false;
 }
 
 pub fn firstCall(
@@ -643,7 +729,10 @@ pub const Flags = packed struct(u32) {
     /// Set after the first H3 retry so a stale-session/GOAWAY race retries
     /// once on a fresh connection but never loops.
     h3_retried: bool = false,
-    _: u13 = 0,
+    /// zun TLS-ID-1: verification of the pooled socket this request reused
+    /// (`.none` for a fresh connection). See `pooledSocketVerification`.
+    reused_socket_verification: PeerVerification = .none,
+    _: u11 = 0,
 };
 
 // TODO: reduce the size of this struct
@@ -1144,6 +1233,7 @@ pub fn doRedirect(
         ctx.releaseSocket(
             socket,
             this.flags.did_have_handshaking_error and !this.flags.reject_unauthorized,
+            this.pooledSocketVerification(),
             this.connected_url.hostname,
             this.connected_url.getPortAuto(),
             this.tls_props,
@@ -1264,7 +1354,21 @@ fn start_(this: *HTTPClient, comptime is_ssl: bool) void {
         }
     }
 
+    // zun TLS-ID-1: `canOfferH2` refuses h2 when a JS `checkServerIdentity`
+    // callback is set, so `protocol: "http2"` plus a callback would handshake
+    // and then fail in `firstCall`. Fail up front instead (Bun 1.4.5).
+    if (this.flags.force_http2 and this.signals.get(.cert_errors)) {
+        this.fail(error.HTTP2Unsupported);
+        return;
+    }
+
     if (this.flags.force_http3) {
+        // zun TLS-ID-1 (sibling): h3 never runs `checkServerIdentity` nor a
+        // custom TLS context; refuse instead of silently skipping them.
+        if (this.hasTlsOptionsUnsupportedByH3()) {
+            this.fail(error.HTTP3Unsupported);
+            return;
+        }
         if (comptime !is_ssl) {
             this.fail(error.HTTP3Unsupported);
             return;
@@ -1362,6 +1466,7 @@ pub fn onPreconnect(this: *HTTPClient, comptime is_ssl: bool, socket: NewHTTPCon
     ctx.releaseSocket(
         socket,
         this.flags.did_have_handshaking_error and !this.flags.reject_unauthorized,
+        this.pooledSocketVerification(),
         this.url.hostname,
         this.url.getPortAuto(),
         this.tls_props,
@@ -1623,6 +1728,14 @@ pub fn onWritable(this: *HTTPClient, comptime is_first_call: bool, comptime is_s
         proxy.onWritable(is_ssl, socket);
     }
 
+    // zun TLS-ID-1: parked until the JS `checkServerIdentity` callback
+    // approves the peer certificate, so write no HTTP data. Kept below the
+    // tunnel flush so the inner handshake's final flight still reaches the
+    // wire while parked.
+    if (this.state.flags.is_waiting_for_cert_check) {
+        return;
+    }
+
     switch (this.state.request_stage) {
         .pending, .headers, .opened => {
             log("sendInitialRequestPayload", .{});
@@ -1825,6 +1938,18 @@ pub fn onWritable(this: *HTTPClient, comptime is_first_call: bool, comptime is_s
         },
         else => {},
     }
+}
+
+/// zun TLS-ID-1: the JS `checkServerIdentity` callback approved the peer
+/// certificate. Clear the park flag and write the request `onWritable` has
+/// held back since the handshake. Called on the HTTP thread from
+/// `HTTPThread.drainQueuedCertCheckResumes`.
+pub fn resumeAfterCertCheck(this: *HTTPClient, comptime is_ssl: bool, socket: NewHTTPContext(is_ssl).HTTPSocket) void {
+    // Never parked, or already resumed / reset by a redirect or failure.
+    if (!this.state.flags.is_waiting_for_cert_check) return;
+    log("resumeAfterCertCheck", .{});
+    this.state.flags.is_waiting_for_cert_check = false;
+    this.onWritable(true, is_ssl, socket);
 }
 
 pub fn closeAndFail(this: *HTTPClient, err: anyerror, comptime is_ssl: bool, socket: NewHTTPContext(is_ssl).HTTPSocket) void {
@@ -2043,6 +2168,15 @@ pub fn onData(
         // if we have a tunnel we dont care about the other stages, we will just tunnel the data
         this.setTimeout(socket);
         proxy.receive(incoming_data);
+        return;
+    }
+
+    // zun TLS-ID-1: while parked for the JS `checkServerIdentity` verdict no
+    // request has been written, so any application data is unexpected. Must
+    // stay below the tunnel dispatch: a tunnelled target's inner-TLS records
+    // must keep reaching the SSLWrapper while parked.
+    if (this.state.flags.is_waiting_for_cert_check) {
+        this.closeAndFail(error.UnexpectedData, is_ssl, socket);
         return;
     }
 
@@ -2303,6 +2437,7 @@ fn sendProgressUpdateWithoutStageCheck(this: *HTTPClient, comptime is_ssl: bool,
             ctx.releaseSocket(
                 socket,
                 this.flags.did_have_handshaking_error and !this.flags.reject_unauthorized,
+                this.pooledSocketVerification(),
                 this.connected_url.hostname,
                 this.connected_url.getPortAuto(),
                 this.tls_props,

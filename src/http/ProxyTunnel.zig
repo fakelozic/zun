@@ -27,6 +27,10 @@ did_have_handshaking_error: bool = false,
 /// false; without this flag, a strict caller could reuse a tunnel where
 /// hostname was never checked.
 established_with_reject_unauthorized: bool = false,
+/// zun TLS-ID-1: how the inner TLS peer (the origin) was authenticated, so a
+/// pooled tunnel is only handed to a request it satisfies (see
+/// `HTTPClient.PeerVerification`). Max of every client that used it.
+verification: HTTPClient.PeerVerification = .none,
 ref_count: RefCount,
 
 const ProxyTunnelWrapper = SSLWrapper(*HTTPClient);
@@ -41,7 +45,11 @@ fn onOpen(this: *HTTPClient) void {
         defer proxy.deref();
         if (proxy.wrapper) |*wrapper| {
             var ssl_ptr = wrapper.ssl orelse return;
-            const _hostname = this.hostname orelse this.url.hostname;
+            // zun TLS-ID-1: SNI is the name verification uses
+            // (`tls.serverName` > URL host), never the `Host` header. Before,
+            // SNI came from `Host`/URL host while the check used `serverName`
+            // (review F-5). Bun 1.4.5 does the same.
+            const _hostname = HTTPClient.getTlsHostname(this, false);
 
             var hostname: [:0]const u8 = "";
             var hostname_needs_free = false;
@@ -68,6 +76,14 @@ fn onData(this: *HTTPClient, decoded_data: []const u8) void {
     if (this.proxy_tunnel) |proxy| {
         proxy.ref();
         defer proxy.deref();
+        // zun TLS-ID-1: while parked for the JS `checkServerIdentity`
+        // verdict no request has gone through the tunnel, so decrypted
+        // application data here is unexpected.
+        if (this.state.flags.is_waiting_for_cert_check) {
+            log("ProxyTunnel onData while parked", .{});
+            proxy.close(error.UnexpectedData);
+            return;
+        }
         switch (this.state.response_stage) {
             .body => {
                 log("ProxyTunnel onData body", .{});
@@ -390,6 +406,9 @@ pub fn detachOwner(this: *ProxyTunnel, client: *const HTTPClient) void {
     // detaches, it must not downgrade a hostname-verified TLS session to
     // lax-established; once true, stays true.
     this.established_with_reject_unauthorized = this.established_with_reject_unauthorized or client.flags.reject_unauthorized;
+    // max semantics: a lax client may reuse a strict tunnel (existingSocket
+    // only blocks the reverse); when it detaches it must not downgrade it.
+    this.verification = this.verification.max(client.targetVerification());
     // We intentionally leave wrapper.handlers.ctx stale here. The tunnel is
     // idle in the pool and no callbacks will fire until adopt() reattaches
     // a new owner and socket.
