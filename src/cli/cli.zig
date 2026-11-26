@@ -161,7 +161,7 @@ pub const HelpCommand = struct {
 
     // the spacing between commands here is intentional
     pub const cli_helptext_fmt =
-        \\<b>Usage:<r> <b>bun \<command\> <cyan>[...flags]<r> <b>[...args]<r>
+        \\<b>Usage:<r> <b>zun \<command\> <cyan>[...flags]<r> <b>[...args]<r>
         \\
         \\<b>Commands:<r>
         \\  <b><magenta>run<r>       <d>./my-script.ts<r>       Execute a file with Bun
@@ -189,16 +189,14 @@ pub const HelpCommand = struct {
         \\
         \\  <b><cyan>init<r>                           Start an empty Bun project from a built-in template
         \\  <b><cyan>create<r>    <d>{s:<16}<r>     Create a new project from a template <d>(bun c)<r>
-        \\  <b><cyan>upgrade<r>                        Upgrade to latest version of Bun.
-        \\  <b><cyan>feedback<r>  <d>./file1 ./file2<r>      Provide feedback to the Bun team.
         \\
         \\  <d>\<command\><r> <b><cyan>--help<r>               Print help text for command.
         \\
     ;
     const cli_helptext_footer =
         \\
-        \\Learn more about Bun:            <magenta>https://bun.com/docs<r>
-        \\Join our Discord community:      <blue>https://bun.com/discord<r>
+        \\zun tracks Bun 1.3.14; Bun's docs apply: <magenta>https://bun.com/docs<r>
+        \\Commands whose module is not restored yet say so when run (docs/status/restore.md).
         \\
     ;
 
@@ -239,8 +237,9 @@ pub const HelpCommand = struct {
                 }
 
                 Output.pretty(
-                    "<r><b><magenta>Bun<r> is a fast JavaScript runtime, package manager, bundler, and test runner. <d>(" ++
-                        Global.package_json_version_with_revision ++
+                    // zun: own identity (docs/identity.md); `upgrade`/`feedback` are off by policy, so not listed.
+                    "<r><b><magenta>zun<r> is a Zig continuation of Bun: a JavaScript runtime, package manager, bundler, and test runner. <d>(" ++
+                        bun.zun.revision_line ++
                         ")<r>\n\n" ++
                         cli_helptext_fmt,
                     args,

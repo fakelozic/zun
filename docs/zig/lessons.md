@@ -195,3 +195,21 @@ logs (`[sys]`, `[fs]`, …) but not `Output.debug(...)`, which prints whenever `
 un-gated because a "make it compile" edit deleted `and bun.cli.debug_flags.hasResolveBreakpoint(...)` when `src/cli`
 was cut. **Do:** when a condition's operand refers to a removed subsystem, replace it with an equivalent opt-in gate
 (or `false`), never delete it. Verified by running the unfixed and fixed builds (`docs/rca/TQ-2-*.md`).
+
+## 2026-11-26: gating a missing CLI command: `@compileError` decls, namespaces, not bare names
+
+Restoring `src/cli` (R2), most commands' files were not in the tree. What works on 0.17.1
+(`probes/cli-gate/run.sh`):
+- Replace `pub const X = @import("./x_command.zig").X;` with `pub const X = @compileError("zun-gate(<m>): …");`.
+  The error fires only if something analysed names `X`, and then it says exactly what is missing.
+- Wrap the dispatch arm: `.X => if (comptime bun.restore_flags.m) { … X.exec(ctx) … } else bun.restore_flags.cliUnavailable("zun x"),`.
+  The comptime-false branch is not analysed, so it may name the `@compileError` decl or a missing decl through a
+  namespace (`Run.bootBunShell`, `bun.shell.…`).
+- It may **not** name a bare identifier that is declared nowhere (`bootBunShell()`): AstGen rejects
+  "use of undeclared identifier" before any comptime evaluation.
+- `if (comptime a) if (b) { … };` used as a statement needs the trailing `;` (the inner `if` is an expression).
+Also seen while porting (fixed by the compiler errors, listed so the next restore goes faster): `std.time.Instant`
+is gone (use `bun.compat.nanoTimestamp()` deltas); signal handlers for `bun.sys.Sigaction.sigaction` take
+`(std.posix.SIG, *const siginfo_t, ?*anyopaque)`; `std.c.raise`/`kill` take `std.posix.SIG`, while `bun.sys.sigaction`
+and `Process.kill` take an int (`@intFromEnum`); `linux.E.init(rc)` is `linux.errno(rc)`; `std.mem.trimLeft` is
+`trimStart`; `std.array_list.Managed` has no `.writer()` (use `bun.compat.listWriter(&list)`).
