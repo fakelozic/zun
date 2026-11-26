@@ -1,6 +1,6 @@
 # H2C-1: both HTTP/2 stacks write and read frame headers byte-reversed
 
-- **Status:** fix prepared on branch `t3/fix-http2-frame-byte-order`, **not yet built or verified** (the build slot
+- **Status:** **fixed and verified 2026-11-27**: `test-zun-http2-interop.mjs` passes (zun client → Node, fetch h2 → Node, Node → zun server); re-ran all 169 http2 parity tests: 163/163 earlier passes still pass, `test-http2-misbehaving-flow-control{,-paused}` now pass, `test-http2-forget-closed-streams` still times out. Earlier note: fix prepared on branch `t3/fix-http2-frame-byte-order`, not yet built or verified (the build slot
   is owned by another agent). Only the standalone wire tests and `zig ast-check` have run.
 - **Severity:** high, functional (HTTP/2 doesn't interoperate with any non-zun peer). Security-relevant in that
   it blocks testing F-4's H2 half, and parsing hostile frames went through the wrong decoder.

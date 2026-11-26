@@ -158,7 +158,7 @@ rendered by a server). Review scope: `src/md/*.zig`, `src/runtime/api/MarkdownOb
   `tls.ca` over `unix:`.
 - **Plan:** one RCA per mechanism, then fixes. These need a build.
 
-### H2C-1: both HTTP/2 stacks write/read byte-reversed frame headers (functional): fix prepared, unverified
+### H2C-1: both HTTP/2 stacks write/read byte-reversed frame headers (functional): **fixed 2026-11-27** (built; interop with Node passes both ways; 163/163 earlier http2 passes still pass, and the 2 `misbehaving-flow-control*` timeouts now pass)
 
 - Every `fetch(..., {protocol: "http2"})` fails with `HTTP2ProtocolError`, and node:http2 can't talk to Node in either
   direction. `std.mem.byteSwapAllFields` on the packed wire structs swaps the whole backing integer since Zig 0.16
