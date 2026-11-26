@@ -21,7 +21,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-const isWindows = @import("builtin").os.tag == .windows;
+const isWindows = @import("builtin").target.os.tag == .windows;
 
 // const Codepoint = u32;
 
@@ -686,7 +686,7 @@ pub fn GlobWalker_(
                     {
                         defer this.closeDisallowingCwd(fd);
                         const stackbuf_size = 256;
-                        var stfb = std.heap.stackFallback(stackbuf_size, this.walker.arena.allocator());
+                        var stfb = bun.allocators.stackFallback(stackbuf_size, this.walker.arena.allocator());
                         const pathz = try stfb.get().dupeZ(u8, this.walker.patternComponents.items[idx].patternSlice(this.walker.pattern));
                         const stat_result: bun.Stat = switch (Accessor.statat(fd, pathz)) {
                             .err => |e_| {
@@ -937,7 +937,7 @@ pub fn GlobWalker_(
                                     if (!this.walker.evalImpl(active, entry_name)) continue;
 
                                     const stackbuf_size = 256;
-                                    var stfb = std.heap.stackFallback(stackbuf_size, this.walker.arena.allocator());
+                                    var stfb = bun.allocators.stackFallback(stackbuf_size, this.walker.arena.allocator());
                                     const name_z = bun.handleOom(stfb.get().dupeZ(u8, entry_name));
                                     const stat_result = Accessor.lstatat(dir.fd, name_z);
                                     const real_kind = switch (stat_result) {
@@ -1673,7 +1673,7 @@ pub fn GlobWalker_(
             basename_excluding_special_syntax_component_idx: ?*u32,
         ) !void {
             // in case the consumer doesn't care about some outputs.
-            const scratchpad: [3]u32 = .{0} ** 3;
+            const scratchpad: [3]u32 = @splat(0);
             return buildPatternComponents(
                 arena,
                 patternComponents,
@@ -1783,7 +1783,7 @@ pub fn GlobWalker_(
 }
 
 pub inline fn isSeparator(c: Codepoint) bool {
-    if (comptime @import("builtin").os.tag == .windows) return c == '/' or c == '\\';
+    if (comptime @import("builtin").target.os.tag == .windows) return c == '/' or c == '\\';
     return c == '/';
 }
 

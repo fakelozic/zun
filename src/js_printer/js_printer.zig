@@ -34,8 +34,8 @@ pub fn canPrintWithoutEscape(comptime CodePointType: type, c: CodePointType, com
     }
 }
 
-const indentation_space_buf = [_]u8{' '} ** 128;
-const indentation_tab_buf = [_]u8{'\t'} ** 128;
+const indentation_space_buf = @as([128]u8, @splat(' '));
+const indentation_tab_buf = @as([128]u8, @splat('\t'));
 
 pub fn bestQuoteCharForString(comptime Type: type, str: []const Type, allow_backtick: bool) u8 {
     var single_cost: usize = 0;
@@ -6038,7 +6038,7 @@ pub fn printAst(
     if (PrinterType.may_have_module_info) {
         printer.module_info = opts.module_info;
     }
-    var bin_stack_heap = std.heap.stackFallback(1024, bun.default_allocator);
+    var bin_stack_heap = bun.allocators.stackFallback(1024, bun.default_allocator);
     printer.binary_expression_stack = std.array_list.Managed(PrinterType.BinaryExpressionVisitor).init(bin_stack_heap.get());
     defer printer.binary_expression_stack.clearAndFree();
 
@@ -6137,7 +6137,7 @@ pub fn printJSON(
         renamer.toRenamer(),
         undefined,
     );
-    var bin_stack_heap = std.heap.stackFallback(1024, bun.default_allocator);
+    var bin_stack_heap = bun.allocators.stackFallback(1024, bun.default_allocator);
     printer.binary_expression_stack = std.array_list.Managed(PrinterType.BinaryExpressionVisitor).init(bin_stack_heap.get());
     defer printer.binary_expression_stack.clearAndFree();
 
@@ -6246,7 +6246,7 @@ pub fn printWithWriterAndPlatform(
     if (PrinterType.may_have_module_info) {
         printer.module_info = opts.module_info;
     }
-    var bin_stack_heap = std.heap.stackFallback(1024, bun.default_allocator);
+    var bin_stack_heap = bun.allocators.stackFallback(1024, bun.default_allocator);
     printer.binary_expression_stack = std.array_list.Managed(PrinterType.BinaryExpressionVisitor).init(bin_stack_heap.get());
     defer printer.binary_expression_stack.clearAndFree();
 
@@ -6328,7 +6328,7 @@ pub fn printCommonJS(
         renamer.toRenamer(),
         getSourceMapBuilder(if (generate_source_map) .lazy else .disable, false, opts, source, &tree),
     );
-    var bin_stack_heap = std.heap.stackFallback(1024, bun.default_allocator);
+    var bin_stack_heap = bun.allocators.stackFallback(1024, bun.default_allocator);
     printer.binary_expression_stack = std.array_list.Managed(PrinterType.BinaryExpressionVisitor).init(bin_stack_heap.get());
     defer printer.binary_expression_stack.clearAndFree();
 

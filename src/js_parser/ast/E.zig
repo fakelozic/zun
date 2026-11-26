@@ -444,7 +444,7 @@ pub const Number = struct {
                     double_digit[abs];
             }
 
-            return std.fmt.allocPrint(allocator, "{d}", .{@as(i32, @intCast(int_value))}) catch return null;
+            return allocator.print("{d}", .{@as(i32, @intCast(int_value))}) catch return null;
         }
 
         if (std.math.isNan(value)) {
@@ -1177,7 +1177,7 @@ pub const String = struct {
     }
 
     pub fn jsonStringify(s: *const String, writer: anytype) !void {
-        var buf = [_]u8{0} ** 4096;
+        var buf = @as([4096]u8, @splat(0));
         var i: usize = 0;
         for (s.slice16()) |char| {
             buf[i] = @as(u8, @intCast(char));

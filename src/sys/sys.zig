@@ -1833,7 +1833,7 @@ pub fn open(file_path: [:0]const u8, flags: i32, perm: bun.Mode) Maybe(bun.FD) {
     return openat(.cwd(), file_path, flags, perm);
 }
 
-pub const max_count = switch (builtin.os.tag) {
+pub const max_count = switch (builtin.target.os.tag) {
     .linux => 0x7ffff000,
     .macos, .ios, .watchos, .tvos => std.math.maxInt(i32),
     .windows => std.math.maxInt(u32),
@@ -2051,33 +2051,33 @@ pub fn preadv(fd: bun.FD, buffers: []std.posix.iovec, position: isize) Maybe(usi
     }
 }
 
-const preadv_sym = if (builtin.os.tag == .linux and builtin.link_libc)
+const preadv_sym = if (builtin.target.os.tag == .linux and builtin.link_libc)
     std.os.linux.preadv
-else if (builtin.os.tag.isDarwin())
+else if (builtin.target.os.tag.isDarwin())
     darwin_nocancel.@"preadv$NOCANCEL"
 else
     syscall.preadv;
 
-const readv_sym = if (builtin.os.tag == .linux and builtin.link_libc)
+const readv_sym = if (builtin.target.os.tag == .linux and builtin.link_libc)
     std.os.linux.readv
-else if (builtin.os.tag.isDarwin())
+else if (builtin.target.os.tag.isDarwin())
     darwin_nocancel.@"readv$NOCANCEL"
 else
     syscall.readv;
 
-const pwritev_sym = if (builtin.os.tag == .linux and builtin.link_libc)
+const pwritev_sym = if (builtin.target.os.tag == .linux and builtin.link_libc)
     std.os.linux.pwritev
-else if (builtin.os.tag.isDarwin())
+else if (builtin.target.os.tag.isDarwin())
     darwin_nocancel.@"pwritev$NOCANCEL"
 else
     syscall.pwritev;
 
-const writev_sym = if (builtin.os.tag.isDarwin())
+const writev_sym = if (builtin.target.os.tag.isDarwin())
     darwin_nocancel.@"writev$NOCANCEL"
 else
     syscall.writev;
 
-const pread_sym = if (builtin.os.tag.isDarwin())
+const pread_sym = if (builtin.target.os.tag.isDarwin())
     darwin_nocancel.@"pread$NOCANCEL"
 else
     syscall.pread;
@@ -2104,7 +2104,7 @@ pub fn pread(fd: bun.FD, buf: []u8, offset: i64) Maybe(usize) {
     }
 }
 
-const pwrite_sym = if (builtin.os.tag == .linux and builtin.link_libc and bun.Environment.isGlibc)
+const pwrite_sym = if (builtin.target.os.tag == .linux and builtin.link_libc and bun.Environment.isGlibc)
     libc.pwrite64
 else
     syscall.pwrite;
@@ -4277,7 +4277,7 @@ pub const AbsoluteStat = struct {
 };
 
 pub fn lstat_absolute(path: [:0]const u8) !AbsoluteStat {
-    if (builtin.os.tag == .windows) {
+    if (builtin.target.os.tag == .windows) {
         @compileError("Not implemented yet, consider using lstat()");
     }
 
@@ -4450,7 +4450,7 @@ pub fn kindFromMode(mode: mode_t) std.Io.File.Kind {
 
 pub fn getSelfExeSharedLibPaths(allocator: std.mem.Allocator) error{OutOfMemory}![][:0]u8 {
     const List = std.array_list.Managed([:0]u8);
-    switch (builtin.os.tag) {
+    switch (builtin.target.os.tag) {
         .linux,
         .freebsd,
         .netbsd,

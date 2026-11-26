@@ -517,7 +517,7 @@ pub const TablePrinter = struct {
     ) !void {
         const globalObject = this.globalObject;
 
-        var stack_fallback = std.heap.stackFallback(@sizeOf(Column) * 16, this.globalObject.allocator());
+        var stack_fallback = bun.allocators.stackFallback(@sizeOf(Column) * 16, this.globalObject.allocator());
         var columns = try std.array_list.Managed(Column).initCapacity(stack_fallback.get(), 16);
         defer {
             for (columns.items) |*col| {
@@ -1745,7 +1745,7 @@ pub const Formatter = struct {
         };
     }
 
-    const indentation_buf = [_]u8{' '} ** 64;
+    const indentation_buf = @as([64]u8, @splat(' '));
     pub fn writeIndent(
         this: *ConsoleObject.Formatter,
         comptime Writer: type,

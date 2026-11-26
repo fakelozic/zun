@@ -1,4 +1,4 @@
-const SFA = std.heap.StackFallbackAllocator(@min(8192, std.heap.page_size_min));
+const SFA = bun.allocators.StackFallbackAllocator(@min(8192, std.heap.page_size_min));
 
 stack_allocator: SFA = undefined,
 bump_allocator: std.mem.Allocator = undefined,

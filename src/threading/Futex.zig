@@ -59,13 +59,13 @@ pub fn wake(ptr: *const atomic.Value(u32), max_waiters: u32) void {
     Impl.wake(ptr, max_waiters);
 }
 
-const Impl = if (builtin.os.tag == .windows)
+const Impl = if (builtin.target.os.tag == .windows)
     WindowsImpl
-else if (builtin.os.tag.isDarwin())
+else if (builtin.target.os.tag.isDarwin())
     DarwinImpl
-else if (builtin.os.tag == .linux)
+else if (builtin.target.os.tag == .linux)
     LinuxImpl
-else if (builtin.os.tag == .freebsd)
+else if (builtin.target.os.tag == .freebsd)
     FreebsdImpl
 else if (builtin.target.isWasm())
     WasmImpl

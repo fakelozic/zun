@@ -17,8 +17,8 @@ pub const DefaultAllocator = allocators.Default;
 /// Zeroing memory allocator
 pub const z_allocator: std.mem.Allocator = allocators.z_allocator;
 
-pub const callmod_inline: std.builtin.CallModifier = if (builtin.mode == .Debug) .auto else .always_inline;
-pub const callconv_inline: std.builtin.CallingConvention = if (builtin.mode == .Debug) .auto else .@"inline";
+pub const callmod_inline: std.lang.CallModifier = if (builtin.mode == .debug) .auto else .always_inline;
+pub const callconv_inline: std.lang.CallingConvention = if (builtin.mode == .debug) .auto else .@"inline";
 
 /// In debug builds, this will catch memory leaks. In release builds, it is mimalloc.
 pub const debug_allocator: std.mem.Allocator = if (Environment.isDebug or Environment.enable_asan)
@@ -448,7 +448,7 @@ fn Span(comptime T: type) type {
             return ?Span(optional_info.child);
         },
         .pointer => |ptr_info| {
-            const attrs: std.builtin.Type.Pointer.Attributes = .{
+            const attrs: std.lang.Type.Pointer.Attributes = .{
                 .@"const" = ptr_info.is_const,
                 .@"volatile" = ptr_info.is_volatile,
                 .@"allowzero" = ptr_info.is_allowzero and ptr_info.size != .c,
@@ -1965,7 +1965,7 @@ pub const WTF = struct {
 pub const Wyhash11 = @import("./wyhash/wyhash.zig").Wyhash11;
 
 const TODO_LOG = Output.scoped(.TODO, .visible);
-pub inline fn todo(src: std.builtin.SourceLocation, value: anytype) @TypeOf(value) {
+pub inline fn todo(src: std.lang.SourceLocation, value: anytype) @TypeOf(value) {
     if (comptime Environment.allow_assert) {
         TODO_LOG("{s}() at {s}:{d}:{d}", .{ src.fn_name, src.file, src.line, src.column });
     }
@@ -2709,7 +2709,7 @@ pub const StackFallbackAllocator = struct {
 };
 
 pub fn todoPanic(
-    src: std.builtin.SourceLocation,
+    src: std.lang.SourceLocation,
     comptime format: []const u8,
     args: anytype,
 ) noreturn {
@@ -3089,7 +3089,7 @@ noinline fn assertionFailure() noreturn {
     }
 }
 
-noinline fn assertionFailureAtLocation(src: std.builtin.SourceLocation) noreturn {
+noinline fn assertionFailureAtLocation(src: std.lang.SourceLocation) noreturn {
     if (@inComptime()) {
         @compileError(std.fmt.comptimePrint("assertion failure", .{}));
     } else {
@@ -3192,7 +3192,7 @@ pub fn releaseAssert(ok: bool, comptime msg: []const u8, args: anytype) callconv
     }
 }
 
-pub fn assertWithLocation(value: bool, src: std.builtin.SourceLocation) callconv(callconv_inline) void {
+pub fn assertWithLocation(value: bool, src: std.lang.SourceLocation) callconv(callconv_inline) void {
     if (comptime !Environment.allow_assert) {
         return;
     }
@@ -3497,7 +3497,7 @@ pub const libdeflate = @import("./libdeflate_sys/libdeflate.zig");
 
 /// like std.enums.tagName, except it doesn't lose the sentinel value.
 pub fn tagName(comptime Enum: type, value: Enum) ?[:0]const u8 {
-    return inline for (@typeInfo(Enum).@"enum".fields) |f| {
+    return inline for (bun.meta.fieldsOf(@typeInfo(Enum).@"enum")) |f| {
         if (@intFromEnum(value) == f.value) break f.name;
     } else null;
 }
@@ -3731,7 +3731,7 @@ pub inline fn writeAnyToHasher(hasher: anytype, thing: anytype) void {
 
 pub const perf = @import("./perf/perf.zig");
 pub inline fn isComptimeKnown(x: anytype) bool {
-    return comptime @typeInfo(@TypeOf(.{x})).@"struct".fields[0].is_comptime;
+    return comptime bun.meta.fieldsOf(@typeInfo(@TypeOf(.{x})).@"struct")[0].is_comptime;
 }
 
 pub inline fn itemOrNull(comptime T: type, slice: []const T, index: usize) ?T {

@@ -47,7 +47,7 @@ pub const Reader = struct {
         const type_info = @typeInfo(Enum).Enum;
         const tag = try this.readInt(type_info.tag_type);
 
-        inline for (std.meta.fields(Enum)) |field| {
+        inline for (bun.meta.fieldsOf(Enum)) |field| {
             if (tag == field.value) {
                 return @field(Enum, field.name);
             }
@@ -524,3 +524,4 @@ pub const analytics = struct {
 };
 
 const std = @import("std");
+const bun = @import("bun");

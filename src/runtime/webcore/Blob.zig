@@ -721,7 +721,7 @@ pub fn fromDOMFormData(
 ) Blob {
     var arena = bun.ArenaAllocator.init(allocator);
     defer arena.deinit();
-    var stack_allocator = std.heap.stackFallback(1024, arena.allocator());
+    var stack_allocator = bun.allocators.stackFallback(1024, arena.allocator());
     const stack_mem_all = stack_allocator.get();
 
     var hex_buf: [70]u8 = undefined;
@@ -760,7 +760,7 @@ pub fn fromDOMFormData(
     // Always allocate content_type with the default allocator so deinit() can
     // free it unconditionally; the only caller passes bun.default_allocator
     // anyway, but don't rely on that.
-    blob.content_type = std.fmt.allocPrint(bun.default_allocator, "multipart/form-data; boundary={s}", .{boundary}) catch |err| bun.handleOom(err);
+    blob.content_type = bun.default_allocator.print("multipart/form-data; boundary={s}", .{boundary}) catch |err| bun.handleOom(err);
     blob.content_type_allocated = true;
     blob.content_type_was_set = true;
 
@@ -3884,7 +3884,7 @@ pub fn toJSONWithBytes(this: *Blob, global: *JSGlobalObject, raw_bytes: []const 
     defer if (comptime lifetime == .temporary) bun.default_allocator.free(raw_bytes);
 
     if (could_be_all_ascii == null or !could_be_all_ascii.?) {
-        var stack_fallback = std.heap.stackFallback(4096, bun.default_allocator);
+        var stack_fallback = bun.allocators.stackFallback(4096, bun.default_allocator);
         const allocator = stack_fallback.get();
         // if toUTF16Alloc returns null, it means there are no non-ASCII characters
         if (strings.toUTF16Alloc(allocator, buf, false, false) catch null) |external| {
@@ -4191,7 +4191,7 @@ fn fromJSWithoutDeferGC(
         }
     }
 
-    var stack_allocator = std.heap.stackFallback(1024, bun.default_allocator);
+    var stack_allocator = bun.allocators.stackFallback(1024, bun.default_allocator);
     const stack_mem_all = stack_allocator.get();
     var stack: std.array_list.Managed(JSValue) = std.array_list.Managed(JSValue).init(stack_mem_all);
     var joiner = StringJoiner{ .allocator = stack_mem_all };

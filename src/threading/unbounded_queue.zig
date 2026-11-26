@@ -38,7 +38,7 @@ pub fn UnboundedQueue(comptime T: type, comptime next_field: meta.FieldEnum(T)) 
             }
         }
 
-        inline fn atomicLoadNext(item: *T, ordering: std.builtin.AtomicOrder) ?*T {
+        inline fn atomicLoadNext(item: *T, ordering: std.lang.AtomicOrder) ?*T {
             if (comptime has_custom_accessors) {
                 const field_ptr: *FieldType = &@field(item, next_name);
                 return field_ptr.atomicLoadPtr(ordering);
@@ -47,7 +47,7 @@ pub fn UnboundedQueue(comptime T: type, comptime next_field: meta.FieldEnum(T)) 
             }
         }
 
-        inline fn atomicStoreNext(item: *T, ptr: ?*T, ordering: std.builtin.AtomicOrder) void {
+        inline fn atomicStoreNext(item: *T, ptr: ?*T, ordering: std.lang.AtomicOrder) void {
             if (comptime has_custom_accessors) {
                 const field_ptr: *FieldType = &@field(item, next_name);
                 field_ptr.atomicStorePtr(ptr, ordering);

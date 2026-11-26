@@ -56,7 +56,7 @@ pub fn TagTypeEnumWithTypeMap(comptime Types: anytype) struct {
     ty_map: TypeMap(Types),
 } {
     var typeMap: TypeMap(Types) = undefined;
-    var enumFields: [Types.len]std.builtin.Type.EnumField = undefined;
+    var enumFields: [Types.len]bun.meta.EnumField = undefined;
 
 
     inline for (Types, 0..) |field, i| {

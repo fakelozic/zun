@@ -519,7 +519,7 @@ pub fn Field(comptime c: config.Field, comptime packing: config.Table.Packing) t
 }
 
 pub fn Data(comptime c: config.Table) type {
-    var data_fields: [c.fields.len]std.builtin.Type.StructField = undefined;
+    var data_fields: [c.fields.len]std.lang.Type.StructField = undefined;
 
     for (c.fields, 0..) |cf, i| {
         const F = Field(cf, c.packing);
@@ -537,7 +537,7 @@ pub fn Data(comptime c: config.Table) type {
         .@"struct" = .{
             .layout = if (c.packing == .@"packed") .@"packed" else .auto,
             .fields = &data_fields,
-            .decls = &[_]std.builtin.Type.Declaration{},
+            .decls = &[_]std.lang.Type.Declaration{},
             .is_tuple = false,
         },
     });
@@ -651,7 +651,7 @@ pub fn Table2(
 
 pub fn StructFromDecls(comptime Struct: type, comptime decl: []const u8) type {
     const fields = @typeInfo(Struct).@"struct".fields;
-    var decl_fields: [fields.len]std.builtin.Type.StructField = undefined;
+    var decl_fields: [fields.len]std.lang.Type.StructField = undefined;
     var i: usize = 0;
 
     for (@typeInfo(Struct).@"struct".fields) |f| {
@@ -672,7 +672,7 @@ pub fn StructFromDecls(comptime Struct: type, comptime decl: []const u8) type {
         .@"struct" = .{
             .layout = .auto,
             .fields = decl_fields[0..i],
-            .decls = &[_]std.builtin.Type.Declaration{},
+            .decls = &[_]std.lang.Type.Declaration{},
             .is_tuple = false,
         },
     });
@@ -848,7 +848,7 @@ pub fn Slice(
         pub const slice = if (c.cp_packing == .direct)
             _slice
         else
-            void{};
+            {};
 
         // Note: while it would be better for modularity to pass `backing`
         // in, this makes for a nicer API without having to wrap Slice.
@@ -869,7 +869,7 @@ pub fn Slice(
         pub const value = if (c.cp_packing == .direct)
             _value
         else
-            void{};
+            {};
 
         pub fn autoHash(self: Self, hasher: anytype) void {
             // Repeat the two return cases, first with two `comptime` checks,
@@ -940,7 +940,7 @@ pub fn SliceTracking(comptime T: type, comptime max_len: usize) type {
         max_offset: usize = 0,
         max_len: usize = 0,
         offset_map: SliceMap(T, usize) = .empty,
-        len_counts: [max_len]usize = [_]usize{0} ** max_len,
+        len_counts: [max_len]usize = @splat(0),
         shift: ShiftTracking = .{},
 
         const Self = @This();
@@ -1290,7 +1290,7 @@ pub fn Union(comptime c: config.Field, comptime packing: config.Table.Packing) t
 
     const ShiftMember = if (c.cp_packing == .shift) Shift(c, packing) else void;
 
-    var fields: [info.fields.len]std.builtin.Type.UnionField = undefined;
+    var fields: [info.fields.len]std.lang.Type.UnionField = undefined;
     var has_shift: bool = false;
     for (info.fields, 0..) |f, i| {
         const T = if (c.cp_packing == .shift and f.type == u21) blk: {
@@ -1313,7 +1313,7 @@ pub fn Union(comptime c: config.Field, comptime packing: config.Table.Packing) t
             .layout = if (packing == .@"packed") .@"packed" else .auto,
             .tag_type = if (packing == .@"packed") null else Tag,
             .fields = &fields,
-            .decls = &[_]std.builtin.Type.Declaration{},
+            .decls = &[_]std.lang.Type.Declaration{},
         },
     });
 
@@ -1422,8 +1422,8 @@ pub fn Union(comptime c: config.Field, comptime packing: config.Table.Packing) t
 
         pub const Tracking = if (c.cp_packing == .shift) UnionShiftTracking else void;
         pub const init = if (c.cp_packing == .shift) _initShift else _init;
-        pub const unpack = if (c.cp_packing == .shift) void{} else _unpack;
-        pub const unshift = if (c.cp_packing == .shift) _unshift else void{};
+        pub const unpack = if (c.cp_packing == .shift) {} else _unpack;
+        pub const unshift = if (c.cp_packing == .shift) _unshift else {};
 
         pub fn autoHash(self: Self, hasher: anytype) void {
             const tag: Tag = @enumFromInt(self.tag);

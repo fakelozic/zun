@@ -63,7 +63,7 @@ pub fn onMessage(s: *HmrSocket, ws: AnyWebSocket, msg: []const u8, opcode: uws.O
             const topics = msg[1..];
             if (topics.len > HmrTopic.max_count) return;
             outer: for (topics) |char| {
-                inline for (@typeInfo(HmrTopic).@"enum".fields) |field| {
+                inline for (bun.meta.fieldsOf(@typeInfo(HmrTopic).@"enum")) |field| {
                     if (char == field.value) {
                         @field(new_bits, field.name) = true;
                         continue :outer;

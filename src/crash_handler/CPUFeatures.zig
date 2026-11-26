@@ -4,7 +4,7 @@ flags: Flags,
 
 extern "c" fn bun_cpu_features() u8;
 
-pub const Flags = switch (@import("builtin").cpu.arch) {
+pub const Flags = switch (@import("builtin").target.cpu.arch) {
     .x86_64 => packed struct(u8) {
         none: bool,
 
@@ -33,7 +33,7 @@ pub const Flags = switch (@import("builtin").cpu.arch) {
 
 pub fn format(features: @This(), writer: *std.Io.Writer) !void {
     var is_first = true;
-    inline for (@typeInfo(Flags).@"struct".fields) |field| brk: {
+    inline for (bun.meta.fieldsOf(@typeInfo(Flags).@"struct")) |field| brk: {
         if (comptime (bun.strings.eql(field.name, "padding") or
             bun.strings.eql(field.name, "none")))
             break :brk;

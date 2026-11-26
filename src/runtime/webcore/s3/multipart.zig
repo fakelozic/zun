@@ -720,7 +720,7 @@ pub const MultiPartUpload = struct {
     }
 
     pub fn isQueueEmpty(this: *@This()) bool {
-        return this.available.mask == std.bit_set.IntegerBitSet(MAX_QUEUE_SIZE).initFull().mask;
+        return this.available.mask == std.bit_set.Integer(MAX_QUEUE_SIZE).initFull().mask;
     }
 
     pub const WriteEncoding = enum {

@@ -389,7 +389,7 @@ fn buildBuildConfig(
 fn buildTables(
     b: *std.Build,
     build_config_path: std.Build.LazyPath,
-    build_tables_optimize: std.builtin.OptimizeMode,
+    build_tables_optimize: std.lang.Optimize,
 ) struct {
     build_tables: *std.Build.Module,
     tables: std.Build.LazyPath,
@@ -466,8 +466,8 @@ fn buildTables(
 fn createLibMod(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
-    optimize: std.builtin.OptimizeMode,
-    build_tables_optimize: std.builtin.OptimizeMode,
+    optimize: std.lang.Optimize,
+    build_tables_optimize: std.lang.Optimize,
     tables_path_opt: ?std.Build.LazyPath,
     build_config_path: std.Build.LazyPath,
 ) struct {

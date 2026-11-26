@@ -684,7 +684,7 @@ fn doResolveWithArgs(ctx: *jsc.JSGlobalObject, specifier: bun.String, from: bun.
     defer errorable.result.value.deref();
 
     if (!query_string.isEmpty()) {
-        var stack = std.heap.stackFallback(1024, ctx.allocator());
+        var stack = bun.allocators.stackFallback(1024, ctx.allocator());
         const allocator = stack.get();
         var arraylist = std.array_list.Managed(u8).initCapacity(allocator, 1024) catch unreachable;
         defer arraylist.deinit();
@@ -963,7 +963,7 @@ pub export fn Bun__escapeHTML8(globalObject: *jsc.JSGlobalObject, input_value: J
     assert(len > 0);
 
     const input_slice = ptr[0..len];
-    var stack_allocator = std.heap.stackFallback(256, globalObject.bunVM().allocator);
+    var stack_allocator = bun.allocators.stackFallback(256, globalObject.bunVM().allocator);
     const allocator = if (input_slice.len <= 32) stack_allocator.get() else stack_allocator.fallback_allocator;
 
     const escaped = strings.escapeHTMLForLatin1Input(allocator, input_slice) catch {
@@ -1935,7 +1935,7 @@ const std = @import("std");
 const zlib = @import("../../zlib/zlib.zig");
 // bzrt: open-in-editor removed along with cli
 const URL = @import("../../url/url.zig").URL;
-const conv = std.builtin.CallingConvention.Unspecified;
+const conv = std.lang.CallingConvention.Unspecified;
 
 const bun = @import("bun");
 const Async = bun.Async;

@@ -311,7 +311,7 @@ pub fn GenericWriter(
             var i: usize = 0;
             while (i < n) : (i += 1) try self.writeAll(bytes);
         }
-        pub fn writeInt(self: Self, comptime T: type, value: T, comptime endian: std.builtin.Endian) Error!void {
+        pub fn writeInt(self: Self, comptime T: type, value: T, comptime endian: std.lang.Endian) Error!void {
             var b: [@divExact(@typeInfo(T).int.bits, 8)]u8 = undefined;
             std.mem.writeInt(T, &b, value, endian);
             try self.writeAll(&b);
@@ -428,7 +428,7 @@ pub fn GenericReader(
             try self.readNoEof(&b);
             return b;
         }
-        pub fn readInt(self: Self, comptime T: type, comptime endian: std.builtin.Endian) NoEofError!T {
+        pub fn readInt(self: Self, comptime T: type, comptime endian: std.lang.Endian) NoEofError!T {
             const b = try self.readBytesNoEof(@divExact(@typeInfo(T).int.bits, 8));
             return std.mem.readInt(T, &b, endian);
         }
@@ -437,7 +437,7 @@ pub fn GenericReader(
             try self.readNoEof(std.mem.sliceAsBytes(res[0..]));
             return res[0];
         }
-        pub fn readEnum(self: Self, comptime E: type, comptime endian: std.builtin.Endian) (NoEofError || error{InvalidValue})!E {
+        pub fn readEnum(self: Self, comptime E: type, comptime endian: std.lang.Endian) (NoEofError || error{InvalidValue})!E {
             const tag = try self.readInt(@typeInfo(E).@"enum".tag_type, endian);
             return std.enums.fromInt(E, tag) orelse error.InvalidValue;
         }

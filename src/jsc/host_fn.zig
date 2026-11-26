@@ -83,7 +83,7 @@ pub fn toJSHostSetterValue(globalThis: *JSGlobalObject, value: error{ OutOfMemor
 /// Convert the return value of a function returning an error union into a maybe-empty JSValue
 pub fn toJSHostCall(
     globalThis: *JSGlobalObject,
-    src: std.builtin.SourceLocation,
+    src: std.lang.SourceLocation,
     comptime function: anytype,
     // This can't use std.meta.ArgsTuple because that will turn comptime function parameters into
     // runtime tuple values
@@ -111,7 +111,7 @@ pub fn toJSHostCall(
 pub fn fromJSHostCall(
     globalThis: *JSGlobalObject,
     /// For attributing thrown exceptions
-    src: std.builtin.SourceLocation,
+    src: std.lang.SourceLocation,
     comptime function: anytype,
     args: std.meta.ArgsTuple(@TypeOf(function)),
 ) error{JSError}!JSValue {
@@ -128,7 +128,7 @@ pub fn fromJSHostCall(
 pub fn fromJSHostCallGeneric(
     globalThis: *JSGlobalObject,
     /// For attributing thrown exceptions
-    src: std.builtin.SourceLocation,
+    src: std.lang.SourceLocation,
     comptime function: anytype,
     args: std.meta.ArgsTuple(@TypeOf(function)),
 ) error{JSError}!@typeInfo(@TypeOf(function)).@"fn".return_type.? {
@@ -156,7 +156,7 @@ const ParsedHostFunctionErrorSet = struct {
     JSError: bool = false,
 };
 
-inline fn parseErrorSet(T: type, errors: []const std.builtin.Type.Error) ParsedHostFunctionErrorSet {
+inline fn parseErrorSet(T: type, errors: []const std.lang.Type.Error) ParsedHostFunctionErrorSet {
     return comptime brk: {
         var errs: ParsedHostFunctionErrorSet = .{};
         for (errors) |err| {
@@ -185,7 +185,7 @@ pub fn wrap1(comptime func: anytype) @"return": {
     const p = checkWrapParams(func, 1);
     break :@"return" fn (p[0].type.?) callconv(.c) JSValue;
 } {
-    const p = @typeInfo(@TypeOf(func)).@"fn".params;
+    const p = bun.meta.paramsOf(@typeInfo(@TypeOf(func)).@"fn");
     return struct {
         pub fn wrapped(arg0: p[0].type.?) callconv(.c) JSValue {
             return toJSHostCall(arg0, @src(), func, .{arg0});
@@ -197,7 +197,7 @@ pub fn wrap2(comptime func: anytype) @"return": {
     const p = checkWrapParams(func, 2);
     break :@"return" fn (p[0].type.?, p[1].type.?) callconv(.c) JSValue;
 } {
-    const p = @typeInfo(@TypeOf(func)).@"fn".params;
+    const p = bun.meta.paramsOf(@typeInfo(@TypeOf(func)).@"fn");
     return struct {
         pub fn wrapped(arg0: p[0].type.?, arg1: p[1].type.?) callconv(.c) JSValue {
             return toJSHostCall(arg0, @src(), func, .{ arg0, arg1 });
@@ -209,7 +209,7 @@ pub fn wrap3(comptime func: anytype) @"return": {
     const p = checkWrapParams(func, 3);
     break :@"return" fn (p[0].type.?, p[1].type.?, p[2].type.?) callconv(.c) JSValue;
 } {
-    const p = @typeInfo(@TypeOf(func)).@"fn".params;
+    const p = bun.meta.paramsOf(@typeInfo(@TypeOf(func)).@"fn");
     return struct {
         pub fn wrapped(arg0: p[0].type.?, arg1: p[1].type.?, arg2: p[2].type.?) callconv(.c) JSValue {
             return toJSHostCall(arg0, @src(), func, .{ arg0, arg1, arg2 });
@@ -221,7 +221,7 @@ pub fn wrap4(comptime func: anytype) @"return": {
     const p = checkWrapParams(func, 4);
     break :@"return" fn (p[0].type.?, p[1].type.?, p[2].type.?, p[3].type.?) callconv(.c) JSValue;
 } {
-    const p = @typeInfo(@TypeOf(func)).@"fn".params;
+    const p = bun.meta.paramsOf(@typeInfo(@TypeOf(func)).@"fn");
     return struct {
         pub fn wrapped(arg0: p[0].type.?, arg1: p[1].type.?, arg2: p[2].type.?, arg3: p[3].type.?) callconv(.c) JSValue {
             return toJSHostCall(arg0, @src(), func, .{ arg0, arg1, arg2, arg3 });
@@ -233,7 +233,7 @@ pub fn wrap5(comptime func: anytype) @"return": {
     const p = checkWrapParams(func, 5);
     break :@"return" fn (p[0].type.?, p[1].type.?, p[2].type.?, p[3].type.?, p[4].type.?) callconv(.c) JSValue;
 } {
-    const p = @typeInfo(@TypeOf(func)).@"fn".params;
+    const p = bun.meta.paramsOf(@typeInfo(@TypeOf(func)).@"fn");
     return struct {
         pub fn wrapped(arg0: p[0].type.?, arg1: p[1].type.?, arg2: p[2].type.?, arg3: p[3].type.?, arg4: p[4].type.?) callconv(.c) JSValue {
             return toJSHostCall(arg0, @src(), func, .{ arg0, arg1, arg2, arg3, arg4 });
@@ -241,8 +241,8 @@ pub fn wrap5(comptime func: anytype) @"return": {
     }.wrapped;
 }
 
-fn checkWrapParams(comptime func: anytype, comptime N: u8) []const std.builtin.Type.Fn.Param {
-    const params = @typeInfo(@TypeOf(func)).@"fn".params;
+fn checkWrapParams(comptime func: anytype, comptime N: u8) []const bun.meta.Param {
+    const params = bun.meta.paramsOf(@typeInfo(@TypeOf(func)).@"fn");
     if (params.len != N) {
         @compileError(std.fmt.comptimePrint("arg length mismatch: {d} != {d}", .{ N, params.len }));
     } else if (params[0].type.? != *JSGlobalObject) {
@@ -257,7 +257,7 @@ pub fn wrap4v(comptime func: anytype) @"return": {
     const p = checkWrapParams(func, 4);
     break :@"return" fn (p[0].type.?, p[1].type.?, p[2].type.?, p[3].type.?) callconv(jsc.conv) JSValue;
 } {
-    const p = @typeInfo(@TypeOf(func)).@"fn".params;
+    const p = bun.meta.paramsOf(@typeInfo(@TypeOf(func)).@"fn");
     return struct {
         pub fn wrapped(arg0: p[0].type.?, arg1: p[1].type.?, arg2: p[2].type.?, arg3: p[3].type.?) callconv(jsc.conv) JSValue {
             return toJSHostCall(arg0, @src(), func, .{ arg0, arg1, arg2, arg3 });
@@ -497,7 +497,7 @@ pub fn wrapInstanceMethod(
 ) InstanceMethodType(Container) {
     return struct {
         const FunctionType = @TypeOf(@field(Container, name));
-        const FunctionTypeInfo: std.builtin.Type.Fn = @typeInfo(FunctionType).@"fn";
+        const FunctionTypeInfo: std.lang.Type.Fn = @typeInfo(FunctionType).@"fn";
         const Args = std.meta.ArgsTuple(FunctionType);
         const eater = if (auto_protect) jsc.CallFrame.ArgumentsSlice.protectEatNext else jsc.CallFrame.ArgumentsSlice.nextEat;
 
@@ -658,7 +658,7 @@ pub fn wrapStaticMethod(
 ) jsc.JSHostFnZig {
     return struct {
         const FunctionType = @TypeOf(@field(Container, name));
-        const FunctionTypeInfo: std.builtin.Type.Fn = @typeInfo(FunctionType).@"fn";
+        const FunctionTypeInfo: std.lang.Type.Fn = @typeInfo(FunctionType).@"fn";
         const Args = std.meta.ArgsTuple(FunctionType);
         const eater = if (auto_protect) jsc.CallFrame.ArgumentsSlice.protectEatNext else jsc.CallFrame.ArgumentsSlice.nextEat;
 

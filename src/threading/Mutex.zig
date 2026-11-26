@@ -50,14 +50,14 @@ pub fn unlock(self: *Mutex) void {
 
 pub const deinit = void;
 
-const Impl = if (builtin.mode == .Debug and !builtin.single_threaded)
+const Impl = if (builtin.mode == .debug and !builtin.single_threaded)
     DebugImpl
 else
     ReleaseImpl;
 
-pub const ReleaseImpl = if (builtin.os.tag == .windows)
+pub const ReleaseImpl = if (builtin.target.os.tag == .windows)
     WindowsImpl
-else if (builtin.os.tag.isDarwin())
+else if (builtin.target.os.tag.isDarwin())
     DarwinImpl
 else
     FutexImpl;

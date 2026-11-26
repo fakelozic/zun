@@ -49,7 +49,7 @@ pub fn NewIterator(comptime use_windows_ospath: bool) type {
 
             /// Memory such as file names referenced in this returned entry becomes invalid
             /// with subsequent calls to `next`, as well as when this `Dir` is deinitialized.
-            pub const next = switch (builtin.os.tag) {
+            pub const next = switch (builtin.target.os.tag) {
                 .macos, .ios => nextDarwin,
                 // .freebsd, .netbsd, .dragonfly, .openbsd => nextBsd,
                 // .solaris => nextSolaris,
@@ -177,7 +177,7 @@ pub fn NewIterator(comptime use_windows_ospath: bool) type {
             dir: FD,
             // The if guard is solely there to prevent compile errors from missing `linux.dirent64`
             // definition when compiling for other OSes. It doesn't do anything when compiling for Linux.
-            buf: [8192]u8 align(if (builtin.os.tag != .linux) 1 else @alignOf(linux.dirent64)),
+            buf: [8192]u8 align(if (builtin.target.os.tag != .linux) 1 else @alignOf(linux.dirent64)),
             index: usize,
             end_index: usize,
 

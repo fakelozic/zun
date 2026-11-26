@@ -182,10 +182,10 @@ pub fn start(self: *Progress, name: []const u8, estimated_total_items: usize) *N
     if (stderr.supportsAnsiEscapeCodes()) {
         self.terminal = stderr;
         self.supports_ansi_escape_codes = true;
-    } else if (builtin.os.tag == .windows and stderr.isTty()) {
+    } else if (builtin.target.os.tag == .windows and stderr.isTty()) {
         self.is_windows_terminal = true;
         self.terminal = stderr;
-    } else if (builtin.os.tag != .windows) {
+    } else if (builtin.target.os.tag != .windows) {
         // we are in a "dumb" terminal like in acme or writing to a file
         self.terminal = stderr;
     }
@@ -240,7 +240,7 @@ fn clearWithHeldLock(p: *Progress, end_ptr: *usize) void {
         if (p.supports_ansi_escape_codes) {
             end += (std.fmt.bufPrint(p.output_buffer[end..], "\x1b[{d}D", .{p.columns_written}) catch unreachable).len;
             end += (std.fmt.bufPrint(p.output_buffer[end..], "\x1b[0K", .{}) catch unreachable).len;
-        } else if (builtin.os.tag == .windows) winapi: {
+        } else if (builtin.target.os.tag == .windows) winapi: {
             assert(p.is_windows_terminal);
 
             var info: windows.CONSOLE_SCREEN_BUFFER_INFO = undefined;

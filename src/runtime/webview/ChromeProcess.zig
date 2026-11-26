@@ -217,7 +217,7 @@ fn findPlaywrightShell(alloc: std.mem.Allocator) ?[:0]const u8 {
     //   non-cft: chrome-linux/headless_shell   (linux arm64 only)
     const arch = if (comptime bun.Environment.isAarch64) "arm64" else "x64";
     const plat = if (comptime bun.Environment.isMac) "mac" else "linux";
-    const subdir_cft = std.fmt.allocPrint(alloc, "chrome-headless-shell-{s}-{s}/chrome-headless-shell", .{ plat, arch }) catch return null;
+    const subdir_cft = alloc.print("chrome-headless-shell-{s}-{s}/chrome-headless-shell", .{ plat, arch }) catch return null;
     defer alloc.free(subdir_cft);
 
     const bin_buf = bun.path_buffer_pool.get();
@@ -278,12 +278,12 @@ fn spawn(vm: *jsc.VirtualMachine, userDataDir: ?[*:0]const u8, explicitPath: ?[*
     // the default profile (~/Library/Application Support/Google/Chrome) and
     // aborts if a real Chrome is already running.
     const dataDir = if (userDataDir) |d|
-        try std.fmt.allocPrintSentinel(alloc, "--user-data-dir={s}", .{d}, 0)
+        try alloc.printSentinel("--user-data-dir={s}", .{d}, 0)
     else blk: {
         // pid_t → u32 cast so {d} formats. Fresh dir per parent process;
         // multiple Bun.WebView instances in one process share the Chrome.
         const pid: u32 = @intCast(std.c.getpid());
-        break :blk try std.fmt.allocPrintSentinel(alloc, "--user-data-dir=/tmp/bun-chrome-{d}", .{pid}, 0);
+        break :blk try alloc.printSentinel("--user-data-dir=/tmp/bun-chrome-{d}", .{pid}, 0);
     };
 
     var argv: std.ArrayListUnmanaged(?[*:0]const u8) = .empty;
@@ -440,7 +440,7 @@ fn readDevToolsActivePort(out_buf: *std.ArrayListUnmanaged(u8)) ?void {
 
         out_buf.clearRetainingCapacity();
         // zig 0.16: ArrayListUnmanaged.writer(alloc) removed → allocPrint + appendSlice
-        const url_str = std.fmt.allocPrint(bun.default_allocator, "ws://127.0.0.1:{d}{s}", .{ port, ws_path }) catch return null;
+        const url_str = bun.default_allocator.print("ws://127.0.0.1:{d}{s}", .{ port, ws_path }) catch return null;
         defer bun.default_allocator.free(url_str);
         out_buf.appendSlice(bun.default_allocator, url_str) catch return null;
         return;

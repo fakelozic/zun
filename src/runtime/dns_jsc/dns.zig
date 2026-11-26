@@ -68,7 +68,7 @@ const LibInfo = struct {
             return dns_lookup.promise.value();
         }
 
-        var stack_fallback = std.heap.stackFallback(1024, bun.default_allocator);
+        var stack_fallback = bun.allocators.stackFallback(1024, bun.default_allocator);
         const name_allocator = stack_fallback.get();
         const name_z = bun.handleOom(name_allocator.dupeZ(u8, query.name));
         defer name_allocator.free(name_z);
@@ -2100,7 +2100,7 @@ pub const Resolver = struct {
     }
 
     fn anyRequestsPending(this: *Resolver) bool {
-        inline for (@typeInfo(Resolver).@"struct".fields) |field| {
+        inline for (bun.meta.fieldsOf(@typeInfo(Resolver).@"struct")) |field| {
             if (comptime std.mem.startsWith(u8, field.name, "pending_")) {
                 const set = &@field(this, field.name).used;
                 if (set.findFirstSet() != null) {
@@ -3546,7 +3546,7 @@ pub const Resolver = struct {
         var channel = try resolver.getChannelOrError(globalThis);
 
         // This string will be freed in `CAresNameInfo.deinit`
-        const cache_name = bun.handleOom(std.fmt.allocPrint(bun.default_allocator, "{s}|{d}", .{ addr_s, port }));
+        const cache_name = bun.handleOom(bun.default_allocator.print("{s}|{d}", .{ addr_s, port }));
 
         const key = GetNameInfoRequest.PendingCacheKey.init(cache_name);
         var cache = resolver.getOrPutIntoResolvePendingCache(

@@ -99,7 +99,7 @@ const Precompute = struct {
 
         const max_state_int = blk: {
             var max: usize = 0;
-            for (@typeInfo(BreakState).@"enum".fields) |field| {
+            for (bun.meta.fieldsOf(@typeInfo(BreakState).@"enum")) |field| {
                 if (field.value > max) max = field.value;
             }
             break :blk max;

@@ -742,7 +742,7 @@ noinline fn writeBytes(dest: Destination, bytes: []const u8) void {
 }
 
 inline fn hasNoArgs(comptime Args: type) bool {
-    return @typeInfo(Args).@"struct".fields.len == 0;
+    return bun.meta.fieldsOf(@typeInfo(Args).@"struct").len == 0;
 }
 
 inline fn printTo(dest: Destination, comptime fmt: string, args: anytype) void {
@@ -1297,7 +1297,7 @@ pub fn initScopedDebugWriterAtStartup() void {
             }
 
             // do not use libuv through this code path, since it might not be initialized yet.
-            const pid = std.fmt.allocPrint(bun.default_allocator, "{d}", .{getpid()}) catch @panic("failed to allocate path");
+            const pid = bun.default_allocator.print("{d}", .{getpid()}) catch @panic("failed to allocate path");
             defer bun.default_allocator.free(pid);
 
             const path_fmt = std.mem.replaceOwned(u8, bun.default_allocator, path, "{pid}", pid) catch @panic("failed to allocate path");

@@ -14,7 +14,7 @@ fn getDlError(allocator: std.mem.Allocator) ![]const u8 {
 
         // For now, just return the error code as we'd need to implement FormatMessageW in Zig
         // This is still better than a generic message
-        return try std.fmt.allocPrint(allocator, "error code {d}", .{err_int});
+        return try allocator.print("error code {d}", .{err_int});
     } else {
         // On POSIX systems, use dlerror() to get the actual system error
         const msg = if (std.c.dlerror()) |err_ptr|
@@ -1092,9 +1092,7 @@ pub const FFI = struct {
                     defer if (dlerror_buf) |buf| bun.default_allocator.free(buf);
                     const dlerror_msg = dlerror_buf orelse "unknown error";
 
-                    const msg = bun.handleOom(std.fmt.allocPrint(
-                        bun.default_allocator,
-                        "Failed to open library \"{s}\": {s}",
+                    const msg = bun.handleOom(bun.default_allocator.print("Failed to open library \"{s}\": {s}",
                         .{ name, dlerror_msg },
                     ));
                     defer bun.default_allocator.free(msg);

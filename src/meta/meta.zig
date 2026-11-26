@@ -6,11 +6,11 @@ pub fn OptionalChild(comptime T: type) type {
     return child.Optional.child;
 }
 
-pub fn EnumFields(comptime T: type) []const std.builtin.Type.EnumField {
+pub fn EnumFields(comptime T: type) []const bun.meta.EnumField {
     const tyinfo = @typeInfo(T);
     return switch (tyinfo) {
-        .@"union" => std.meta.fields(tyinfo.@"union".tag_type.?),
-        .@"enum" => tyinfo.@"enum".fields,
+        .@"union" => bun.meta.fieldsOf(tyinfo.@"union".tag_type.?),
+        .@"enum" => bun.meta.fieldsOf(tyinfo.@"enum"),
         else => {
             @compileError("Used `EnumFields(T)` on a type that is not an `enum` or a `union(enum)`");
         },
@@ -19,7 +19,7 @@ pub fn EnumFields(comptime T: type) []const std.builtin.Type.EnumField {
 
 pub fn ReturnOfMaybe(comptime function: anytype) type {
     const Func = @TypeOf(function);
-    const typeinfo: std.builtin.Type.Fn = @typeInfo(Func).@"fn";
+    const typeinfo: std.lang.Type.Fn = @typeInfo(Func).@"fn";
     const MaybeType = typeinfo.return_type orelse @compileError("Expected the function to have a return type");
     return MaybeResult(MaybeType);
 }
@@ -46,7 +46,7 @@ pub fn ReturnOf(comptime function: anytype) type {
 }
 
 pub fn ReturnOfType(comptime Type: type) type {
-    const typeinfo: std.builtin.Type.Fn = @typeInfo(Type).@"fn";
+    const typeinfo: std.lang.Type.Fn = @typeInfo(Type).@"fn";
     return typeinfo.return_type orelse void;
 }
 
@@ -70,7 +70,7 @@ pub inline fn typeBaseName(comptime fullname: [:0]const u8) [:0]const u8 {
 }
 
 pub fn enumFieldNames(comptime Type: type) []const []const u8 {
-    var names: [std.meta.fields(Type).len][]const u8 = std.meta.fieldNames(Type).*;
+    var names: [bun.meta.fieldsOf(Type).len][]const u8 = std.meta.fieldNames(Type).*;
     var i: usize = 0;
     for (names) |name| {
         // zig seems to include "_" or an empty string in the list of enum field names
@@ -86,7 +86,7 @@ pub fn enumFieldNames(comptime Type: type) []const []const u8 {
 
 pub fn banFieldType(comptime Container: type, comptime T: type) void {
     comptime {
-        for (std.meta.fields(Container)) |field| {
+        for (bun.meta.fieldsOf(Container)) |field| {
             if (field.type == T) {
                 @compileError(std.fmt.comptimePrint(typeName(T) ++ " field \"" ++ field.name ++ "\" not allowed in " ++ typeName(Container), .{}));
             }
@@ -192,7 +192,7 @@ pub fn hasStableMemoryLayout(comptime T: type) bool {
         },
         .@"struct" => switch (tyinfo.@"struct".layout) {
             .auto => {
-                inline for (tyinfo.@"struct".fields) |field| {
+                inline for (bun.meta.fieldsOf(tyinfo.@"struct")) |field| {
                     if (!hasStableMemoryLayout(field.field_type)) return false;
                 }
                 return true;
@@ -204,7 +204,7 @@ pub fn hasStableMemoryLayout(comptime T: type) bool {
             .auto => {
                 if (tyinfo.@"union".tag_type == null or !hasStableMemoryLayout(tyinfo.@"union".tag_type.?)) return false;
 
-                inline for (tyinfo.@"union".fields) |field| {
+                inline for (bun.meta.fieldsOf(tyinfo.@"union")) |field| {
                     if (!hasStableMemoryLayout(field.type)) return false;
                 }
 
@@ -227,13 +227,13 @@ pub fn isSimpleCopyType(comptime T: type) bool {
         .float => true,
         .@"enum" => true,
         .@"struct" => {
-            inline for (tyinfo.@"struct".fields) |field| {
+            inline for (bun.meta.fieldsOf(tyinfo.@"struct")) |field| {
                 if (!isSimpleCopyType(field.type)) return false;
             }
             return true;
         },
         .@"union" => {
-            inline for (tyinfo.@"union".fields) |field| {
+            inline for (bun.meta.fieldsOf(tyinfo.@"union")) |field| {
                 if (!isSimpleCopyType(field.type)) return false;
             }
             return true;
@@ -276,7 +276,7 @@ pub const ListContainerType = enum {
 pub fn looksLikeListContainerType(comptime T: type) ?struct { list: ListContainerType, child: type } {
     const tyinfo = @typeInfo(T);
     if (tyinfo == .@"struct") {
-        const fields = tyinfo.@"struct".fields;
+        const fields = bun.meta.fieldsOf(tyinfo.@"struct");
 
         // Looks like array list
         if (fields.len == 2 and
@@ -299,7 +299,7 @@ pub fn looksLikeListContainerType(comptime T: type) ?struct { list: ListContaine
 }
 
 pub fn Tagged(comptime U: type, comptime T: type) type {
-    return ReifyUnion(.auto, T, @typeInfo(U).@"union".fields);
+    return ReifyUnion(.auto, T, bun.meta.fieldsOf(@typeInfo(U).@"union"));
 }
 
 pub fn SliceChild(comptime T: type) type {
@@ -314,7 +314,7 @@ pub fn SliceChild(comptime T: type) type {
 pub fn useAllFields(comptime T: type, _: VoidFields(T)) void {}
 
 fn VoidFields(comptime T: type) type {
-    const fields = @typeInfo(T).@"struct".fields;
+    const fields = bun.meta.fieldsOf(@typeInfo(T).@"struct");
     var new_fields = fields[0..fields.len].*;
     for (&new_fields) |*field| {
         field.type = void;
@@ -348,13 +348,13 @@ const std = @import("std");
 // bzrt: zig 0.16 removed @Type — the shared reification helpers from the old
 // []const StructField/UnionField (0.15 forms are field-compatible).
 pub fn ReifyStruct(
-    comptime layout: std.builtin.Type.ContainerLayout,
+    comptime layout: std.lang.Type.ContainerLayout,
     comptime BackingInt: ?type,
-    comptime fields: []const std.builtin.Type.StructField,
+    comptime fields: []const bun.meta.StructField,
 ) type {
     var names: [fields.len][]const u8 = undefined;
     var types: [fields.len]type = undefined;
-    var attrs: [fields.len]std.builtin.Type.StructField.Attributes = undefined;
+    var attrs: [fields.len]std.lang.Type.Struct.FieldAttributes = undefined;
     for (fields, 0..) |f, i| {
         names[i] = f.name;
         types[i] = f.type;
@@ -371,13 +371,13 @@ pub fn ReifyStruct(
 }
 
 pub fn ReifyUnion(
-    comptime layout: std.builtin.Type.ContainerLayout,
+    comptime layout: std.lang.Type.ContainerLayout,
     comptime Tag: ?type,
-    comptime fields: []const std.builtin.Type.UnionField,
+    comptime fields: []const bun.meta.UnionField,
 ) type {
     var names: [fields.len][]const u8 = undefined;
     var types: [fields.len]type = undefined;
-    var attrs: [fields.len]std.builtin.Type.UnionField.Attributes = undefined;
+    var attrs: [fields.len]std.lang.Type.Union.FieldAttributes = undefined;
     for (fields, 0..) |f, i| {
         names[i] = f.name;
         types[i] = f.type;

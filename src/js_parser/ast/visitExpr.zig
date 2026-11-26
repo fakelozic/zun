@@ -103,7 +103,7 @@ pub fn VisitExpr(
                         const r = js_lexer.rangeOfIdentifier(p.source, expr.loc);
                         var notes = p.allocator.alloc(logger.Data, 1) catch unreachable;
                         notes[0] = logger.Data{
-                            .text = std.fmt.allocPrint(p.allocator, "The symbol \"{s}\" was declared a constant here:", .{name}) catch unreachable,
+                            .text = p.allocator.print("The symbol \"{s}\" was declared a constant here:", .{name}) catch unreachable,
                             .location = logger.Location.initOrNull(p.source, js_lexer.rangeOfIdentifier(p.source, result.declare_loc.?)),
                         };
 
@@ -1512,9 +1512,7 @@ pub fn VisitExpr(
                             p.log.addError(
                                 p.source,
                                 expr.loc,
-                                std.fmt.allocPrint(
-                                    p.allocator,
-                                    "\"useState\" is not available in a server component. If you need interactivity, consider converting part of this to a Client Component (by adding `\"use client\";` to the top of the file).",
+                                p.allocator.print("\"useState\" is not available in a server component. If you need interactivity, consider converting part of this to a Client Component (by adding `\"use client\";` to the top of the file).",
                                     .{},
                                 ) catch |err| bun.handleOom(err),
                             ) catch |err| bun.handleOom(err);

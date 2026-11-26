@@ -88,7 +88,7 @@ pub const State = opaque {
         // setOutputType has side effects that are conditional on existing
         // options, so this must be called after setOptions
         if (comptime !validate_options) {
-            if (config.options) |options| state.setOptions(options) catch if (comptime @import("builtin").mode == .Debug) {
+            if (config.options) |options| state.setOptions(options) catch if (comptime @import("builtin").mode == .debug) {
                 @panic("Failed to set options");
             };
         }
@@ -179,7 +179,7 @@ pub const State = opaque {
         const info = @typeInfo(@TypeOf(symbols));
         var buf: [256]u8 = undefined;
 
-        inline for (info.@"struct".fields) |field| {
+        inline for (bun.meta.fieldsOf(info.@"struct")) |field| {
             const value = @field(symbols, field.name);
             switch (@typeInfo(field.type)) {
                 .int, .comptime_int => {
@@ -277,7 +277,7 @@ pub const State = opaque {
     /// ```
     pub fn addSymbolsComptime(s: *State, symbols: anytype) Error!void {
         const info = @typeInfo(@TypeOf(symbols));
-        inline for (info.@"struct".fields) |field| {
+        inline for (bun.meta.fieldsOf(info.@"struct")) |field| {
             const value = @field(symbols, field.name);
             try s.addSymbol(field.name, value);
         }
@@ -321,3 +321,4 @@ pub const State = opaque {
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const bun = @import("bun");

@@ -27,7 +27,7 @@ pub const TopExceptionScope = struct {
     pub fn init(
         self: *TopExceptionScope,
         global: *jsc.JSGlobalObject,
-        src: std.builtin.SourceLocation,
+        src: std.lang.SourceLocation,
     ) void {
         TopExceptionScope__construct(
             &self.bytes,
@@ -151,7 +151,7 @@ pub const ExceptionValidationScope = struct {
     pub fn init(
         self: *ExceptionValidationScope,
         global: *jsc.JSGlobalObject,
-        src: std.builtin.SourceLocation,
+        src: std.lang.SourceLocation,
     ) void {
         if (Environment.ci_assert) self.scope.init(global, src);
     }

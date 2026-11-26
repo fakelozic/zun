@@ -996,7 +996,7 @@ pub fn NewServer(protocol_enum: enum { http, https }, development_kind: enum { d
                     if (this.listener) |listener| {
                         port = @intCast(listener.getLocalPort());
 
-                        var buf: [64]u8 = [_]u8{0} ** 64;
+                        var buf: [64]u8 = @splat(0);
                         const address_bytes = listener.socket().localAddress(&buf) orelse return JSValue.jsNull();
                         var addr = SocketAddress.init(address_bytes, port) catch {
                             @branchHint(.unlikely);
@@ -1006,7 +1006,7 @@ pub fn NewServer(protocol_enum: enum { http, https }, development_kind: enum { d
                     }
                     if (comptime has_h3) if (this.h3_listener) |h3l| {
                         port = @intCast(h3l.getLocalPort());
-                        var buf: [64]u8 = [_]u8{0} ** 64;
+                        var buf: [64]u8 = @splat(0);
                         const address_bytes = h3l.getLocalAddress(&buf) orelse return JSValue.jsNull();
                         var addr = SocketAddress.init(address_bytes, port) catch {
                             @branchHint(.unlikely);
@@ -1050,7 +1050,7 @@ pub fn NewServer(protocol_enum: enum { http, https }, development_kind: enum { d
                 },
             };
 
-            const buf = try std.fmt.allocPrint(default_allocator, "{f}", .{fmt});
+            const buf = try default_allocator.print("{f}", .{fmt});
             defer default_allocator.free(buf);
 
             return bun.String.cloneUTF8(buf);
@@ -1070,7 +1070,7 @@ pub fn NewServer(protocol_enum: enum { http, https }, development_kind: enum { d
             }
             {
                 if (this.listener) |listener| {
-                    var buf: [1024]u8 = [_]u8{0} ** 1024;
+                    var buf: [1024]u8 = @splat(0);
 
                     if (listener.socket().remoteAddress(buf[0..1024])) |addr| {
                         if (addr.len > 0) {
@@ -1504,9 +1504,7 @@ pub fn NewServer(protocol_enum: enum { http, https }, development_kind: enum { d
             if (comptime !has_h3) unreachable;
             this.h3_listener = socket;
             if (socket) |s| {
-                this.h3_alt_svc = std.fmt.allocPrintSentinel(
-                    bun.default_allocator,
-                    "h3=\":{d}\"; ma=86400",
+                this.h3_alt_svc = bun.default_allocator.printSentinel("h3=\":{d}\"; ma=86400",
                     .{s.getLocalPort()},
                     0,
                 ) catch "";
@@ -1561,7 +1559,7 @@ pub fn NewServer(protocol_enum: enum { http, https }, development_kind: enum { d
             this.pending_requests += 1;
             defer this.pending_requests -= 1;
             req.setYield(false);
-            var stack_fallback = std.heap.stackFallback(8192, this.allocator);
+            var stack_fallback = bun.allocators.stackFallback(8192, this.allocator);
             const allocator = stack_fallback.get();
 
             const buffer_writer = js_printer.BufferWriter.init(allocator);

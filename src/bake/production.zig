@@ -131,7 +131,7 @@ pub fn writeSourcemapToDisk(
 
     try source_maps.put(
         allocator,
-        try std.fmt.allocPrint(allocator, "bake:/{s}", .{without_prefix}),
+        try allocator.print("bake:/{s}", .{without_prefix}),
         OutputFile.Index.init(@intCast(source_map_index)),
     );
 }
@@ -146,7 +146,7 @@ pub fn buildWithVm(ctx: bun.cli.Command.Context, cwd: []const u8, vm: *VirtualMa
     Output.flush();
     var unresolved_config_entry_point = if (ctx.args.entry_points.len > 0) ctx.args.entry_points[0] else "./bun.app";
     if (bun.resolver.isPackagePath(unresolved_config_entry_point)) {
-        unresolved_config_entry_point = try std.fmt.allocPrint(ctx.allocator, "./{s}", .{unresolved_config_entry_point});
+        unresolved_config_entry_point = try ctx.allocator.print("./{s}", .{unresolved_config_entry_point});
     }
 
     const config_entry_point = b.resolver.resolve(cwd, unresolved_config_entry_point, .entry_point_build) catch |err| {
@@ -425,7 +425,7 @@ pub fn buildWithVm(ctx: bun.cli.Command.Context, cwd: []const u8, vm: *VirtualMa
 
                         try output_module_map.put(
                             allocator,
-                            try std.fmt.allocPrint(allocator, "bake:/{s}", .{without_prefix}),
+                            try allocator.print("bake:/{s}", .{without_prefix}),
                             OutputFile.Index.init(@intCast(i)),
                         );
                     },
@@ -795,7 +795,7 @@ pub export fn BakeToWindowsPath(input: bun.String) callconv(.c) bun.String {
     if (comptime bun.Environment.isPosix) {
         @panic("This code should not be called on POSIX systems.");
     }
-    var sfa = std.heap.stackFallback(1024, bun.default_allocator);
+    var sfa = bun.allocators.stackFallback(1024, bun.default_allocator);
     const alloc = sfa.get();
     const input_utf8 = input.toUTF8(alloc);
     defer input_utf8.deinit();
@@ -807,7 +807,7 @@ pub export fn BakeToWindowsPath(input: bun.String) callconv(.c) bun.String {
 }
 
 pub export fn BakeProdResolve(global: *jsc.JSGlobalObject, a_str: bun.String, specifier_str: bun.String) callconv(.c) bun.String {
-    var sfa = std.heap.stackFallback(@sizeOf(bun.PathBuffer) * 2, bun.default_allocator);
+    var sfa = bun.allocators.stackFallback(@sizeOf(bun.PathBuffer) * 2, bun.default_allocator);
     const alloc = sfa.get();
 
     const specifier = specifier_str.toUTF8(alloc);
@@ -1020,7 +1020,7 @@ pub const PerThread = struct {
 
 /// Given a key, returns the source code to load.
 pub export fn BakeProdLoad(pt: *PerThread, key: bun.String) bun.String {
-    var sfa = std.heap.stackFallback(4096, bun.default_allocator);
+    var sfa = bun.allocators.stackFallback(4096, bun.default_allocator);
     const allocator = sfa.get();
     const utf8 = key.toUTF8(allocator);
     defer utf8.deinit();
@@ -1033,7 +1033,7 @@ pub export fn BakeProdLoad(pt: *PerThread, key: bun.String) bun.String {
 }
 
 pub export fn BakeProdSourceMap(pt: *PerThread, key: bun.String) bun.String {
-    var sfa = std.heap.stackFallback(4096, bun.default_allocator);
+    var sfa = bun.allocators.stackFallback(4096, bun.default_allocator);
     const allocator = sfa.get();
     const utf8 = key.toUTF8(allocator);
     defer utf8.deinit();

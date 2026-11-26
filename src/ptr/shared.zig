@@ -561,7 +561,7 @@ fn parsePointer(comptime Pointer: type) PointerInfo {
 
 const bun = @import("bun");
 const std = @import("std");
-const AtomicOrder = std.builtin.AtomicOrder;
+const AtomicOrder = std.lang.AtomicOrder;
 const AllocError = std.mem.Allocator.Error;
 
 const meta = @import("./meta.zig");

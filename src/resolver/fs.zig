@@ -152,7 +152,7 @@ pub const FileSystem = struct {
 
             const stored = try brk: {
                 if (prev_map) |map| {
-                    var stack_fallback = std.heap.stackFallback(512, allocator);
+                    var stack_fallback = bun.allocators.stackFallback(512, allocator);
                     const stack = stack_fallback.get();
                     const prehashed = bun.StringHashMapContext.PrehashedCaseInsensitive.init(stack, name_slice);
                     defer prehashed.deinit(stack);
@@ -555,9 +555,7 @@ pub const FileSystem = struct {
                 // https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-gettemppathw#remarks
                 .windows => {
                     if (bun.env_var.SYSTEMROOT.get() orelse bun.env_var.WINDIR.get()) |windir| {
-                        return std.fmt.allocPrint(
-                            bun.default_allocator,
-                            "{s}\\Temp",
+                        return bun.default_allocator.print("{s}\\Temp",
                             .{strings.withoutTrailingSlash(windir)},
                         ) catch |err| bun.handleOom(err);
                     }
@@ -572,9 +570,7 @@ pub const FileSystem = struct {
                     var tmp_buf: bun.PathBuffer = undefined;
                     const cwd = std.posix.getcwd(&tmp_buf) catch @panic("Failed to get cwd for platformTempDir");
                     const root = bun.path.windowsFilesystemRoot(cwd);
-                    return std.fmt.allocPrint(
-                        bun.default_allocator,
-                        "{s}\\Windows\\Temp",
+                    return bun.default_allocator.print("{s}\\Windows\\Temp",
                         .{strings.withoutTrailingSlash(root)},
                     ) catch |err| bun.handleOom(err);
                 },
@@ -629,7 +625,7 @@ pub const FileSystem = struct {
                         handle.stdDir(),
 
                         void,
-                        void{},
+                        {},
                     ) catch |err| {
                         existing.entries.data.clearAndFree(bun.default_allocator);
                         return this.readDirectoryError(existing.entries.dir, err) catch unreachable;
@@ -1951,7 +1947,7 @@ pub const Path = struct {
     }
 
     pub fn generateKey(p: *Path, allocator: std.mem.Allocator) !string {
-        return try std.fmt.allocPrint(allocator, "{s}://{s}", .{ p.namespace, p.text });
+        return try allocator.print("{s}://{s}", .{ p.namespace, p.text });
     }
 
     pub fn init(text: string) Path {

@@ -10,7 +10,7 @@ fn TableData(comptime Table: anytype) type {
     return @typeInfo(DataSlice).pointer.child;
 }
 
-fn tableInfoFor(comptime field: []const u8) std.builtin.Type.StructField {
+fn tableInfoFor(comptime field: []const u8) std.lang.Type.StructField {
     inline for (@typeInfo(@TypeOf(tables)).@"struct".fields) |tableInfo| {
         if (@hasField(TableData(tableInfo.type), field)) {
             return tableInfo;
@@ -20,7 +20,7 @@ fn tableInfoFor(comptime field: []const u8) std.builtin.Type.StructField {
     @compileError("Table not found for field: " ++ field);
 }
 
-fn getTableInfo(comptime table_name: []const u8) std.builtin.Type.StructField {
+fn getTableInfo(comptime table_name: []const u8) std.lang.Type.StructField {
     inline for (@typeInfo(@TypeOf(tables)).@"struct".fields) |tableInfo| {
         if (std.mem.eql(u8, tableInfo.name, table_name)) {
             return tableInfo;
@@ -84,7 +84,7 @@ pub const FieldEnum = blk: {
         fields_len += @typeInfo(TableData(tableInfo.type)).@"struct".fields.len;
     }
 
-    var fields: [fields_len]std.builtin.Type.EnumField = undefined;
+    var fields: [fields_len]std.lang.Type.EnumField = undefined;
     var i: usize = 0;
 
     for (@typeInfo(@TypeOf(tables)).@"struct".fields) |tableInfo| {
@@ -101,7 +101,7 @@ pub const FieldEnum = blk: {
         .@"enum" = .{
             .tag_type = std.math.IntFittingRange(0, fields_len - 1),
             .fields = &fields,
-            .decls = &[_]std.builtin.Type.Declaration{},
+            .decls = &[_]std.lang.Type.Declaration{},
             .is_exhaustive = true,
         },
     });

@@ -136,7 +136,7 @@ pub const Action = union(enum) {
     }
 };
 
-fn captureLibcBacktrace(begin_addr: usize, stack_trace: *std.builtin.StackTrace) void {
+fn captureLibcBacktrace(begin_addr: usize, stack_trace: *std.lang.StackTrace) void {
     const backtrace = struct {
         extern "c" fn backtrace(buffer: [*]*anyopaque, size: c_int) c_int;
     }.backtrace;
@@ -171,7 +171,7 @@ fn captureLibcBacktrace(begin_addr: usize, stack_trace: *std.builtin.StackTrace)
 pub fn crashHandler(
     reason: CrashReason,
     // TODO: if both of these are specified, what is supposed to happen?
-    error_return_trace: ?*std.builtin.StackTrace,
+    error_return_trace: ?*std.lang.StackTrace,
     begin_addr: ?usize,
 ) noreturn {
     @branchHint(.cold);
@@ -230,7 +230,7 @@ pub fn crashHandler(
                     Output.flush();
                     Output.Source.Stdio.restore();
 
-                    writer.writeAll("=" ** 60 ++ "\n") catch std.c.abort();
+                    writer.writeAll(bun.strings.repeatComptime("=", 60) ++ "\n") catch std.c.abort();
                     printMetadata(writer) catch std.c.abort();
 
                     if (inside_native_plugin) |name| {
@@ -310,7 +310,7 @@ pub fn crashHandler(
                 }
 
                 var addr_buf: [20]usize = undefined;
-                var trace_buf: std.builtin.StackTrace = undefined;
+                var trace_buf: std.lang.StackTrace = undefined;
 
                 // If a trace was not provided, compute one now
                 const trace = blk: {
@@ -325,7 +325,7 @@ pub fn crashHandler(
 
                     if (comptime bun.Environment.isGlibc) {
                         var addr_buf_libc: [20]usize = undefined;
-                        var trace_buf_libc: std.builtin.StackTrace = .{
+                        var trace_buf_libc: std.lang.StackTrace = .{
                             .index = 0,
                             .instruction_addresses = &addr_buf_libc,
                         };
@@ -490,7 +490,7 @@ pub fn crashHandler(
 
 /// This is called when `main` returns a Zig error.
 /// We don't want to treat it as a crash under certain error codes.
-pub fn handleRootError(err: anyerror, error_return_trace: ?*std.builtin.StackTrace) noreturn {
+pub fn handleRootError(err: anyerror, error_return_trace: ?*std.lang.StackTrace) noreturn {
     var show_trace = bun.Environment.show_crash_trace;
 
     switch (err) {
@@ -785,7 +785,7 @@ pub fn handleRootError(err: anyerror, error_return_trace: ?*std.builtin.StackTra
     Global.exit(1);
 }
 
-pub fn panicImpl(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, begin_addr: ?usize) noreturn {
+pub fn panicImpl(msg: []const u8, error_return_trace: ?*std.lang.StackTrace, begin_addr: ?usize) noreturn {
     @branchHint(.cold);
     crashHandler(
         if (bun.strings.eqlComptime(msg, "reached unreachable code"))
@@ -797,7 +797,7 @@ pub fn panicImpl(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, 
     );
 }
 
-fn panicBuiltin(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, begin_addr: ?usize) noreturn {
+fn panicBuiltin(msg: []const u8, error_return_trace: ?*std.lang.StackTrace, begin_addr: ?usize) noreturn {
     std.debug.panicImpl(error_return_trace, begin_addr, msg);
 }
 
@@ -1311,7 +1311,7 @@ const StackLine = struct {
 };
 
 const TraceString = struct {
-    trace: *const std.builtin.StackTrace,
+    trace: *const std.lang.StackTrace,
     reason: CrashReason,
     action: TraceString.Action,
 
@@ -1585,7 +1585,7 @@ fn crash() noreturn {
 
 pub var verbose_error_trace = false;
 
-noinline fn coldHandleErrorReturnTrace(err_int_workaround_for_zig_ccall_bug: std.meta.Int(.unsigned, @bitSizeOf(anyerror)), trace: *std.builtin.StackTrace, comptime is_root: bool) void {
+noinline fn coldHandleErrorReturnTrace(err_int_workaround_for_zig_ccall_bug: std.meta.Int(.unsigned, @bitSizeOf(anyerror)), trace: *std.lang.StackTrace, comptime is_root: bool) void {
     @branchHint(.cold);
     const err = @errorFromInt(err_int_workaround_for_zig_ccall_bug);
 
@@ -1643,7 +1643,7 @@ noinline fn coldHandleErrorReturnTrace(err_int_workaround_for_zig_ccall_bug: std
     }
 }
 
-inline fn handleErrorReturnTraceExtra(err: anyerror, maybe_trace: ?*std.builtin.StackTrace, comptime is_root: bool) void {
+inline fn handleErrorReturnTraceExtra(err: anyerror, maybe_trace: ?*std.lang.StackTrace, comptime is_root: bool) void {
     if (!builtin.have_error_return_tracing) return;
     if (!verbose_error_trace and !is_root) return;
 
@@ -1659,14 +1659,14 @@ inline fn handleErrorReturnTraceExtra(err: anyerror, maybe_trace: ?*std.builtin.
 /// This can be enabled by passing `--verbose-error-trace` to the CLI.
 /// In release builds with error return tracing enabled, this is also exposed.
 /// You can test if this feature is available by checking `bun --help` for the flag.
-pub inline fn handleErrorReturnTrace(err: anyerror, maybe_trace: ?*std.builtin.StackTrace) void {
+pub inline fn handleErrorReturnTrace(err: anyerror, maybe_trace: ?*std.lang.StackTrace) void {
     handleErrorReturnTraceExtra(err, maybe_trace, false);
 }
 extern "c" fn WTF__DumpStackTrace(ptr: [*]usize, count: usize) void;
 
 /// Version of the standard library dumpStackTrace that has some fallbacks for
 /// cases where such logic fails to run.
-pub fn dumpStackTrace(trace: std.builtin.StackTrace, limits: WriteStackTraceLimits) void {
+pub fn dumpStackTrace(trace: std.lang.StackTrace, limits: WriteStackTraceLimits) void {
     Output.flush();
     var stderr_w = std.Io.File.stderr().writerStreaming(bun.compat.io(), &.{});
     const stderr = &stderr_w.interface;
@@ -1723,7 +1723,7 @@ pub fn dumpStackTrace(trace: std.builtin.StackTrace, limits: WriteStackTraceLimi
     for (programs) |program| {
         var arena = bun.ArenaAllocator.init(bun.default_allocator);
         defer arena.deinit();
-        var sfa = std.heap.stackFallback(16384, arena.allocator());
+        var sfa = bun.allocators.stackFallback(16384, arena.allocator());
         spawnSymbolizer(program, sfa.get(), &trace) catch |err| switch (err) {
             // try next program if this one wasn't found
             error.FileNotFound => continue,
@@ -1733,7 +1733,7 @@ pub fn dumpStackTrace(trace: std.builtin.StackTrace, limits: WriteStackTraceLimi
     }
 }
 
-fn spawnSymbolizer(program: [:0]const u8, alloc: std.mem.Allocator, trace: *const std.builtin.StackTrace) !void {
+fn spawnSymbolizer(program: [:0]const u8, alloc: std.mem.Allocator, trace: *const std.lang.StackTrace) !void {
     _ = program;
     _ = alloc;
     _ = trace;
@@ -1743,7 +1743,7 @@ fn spawnSymbolizer(program: [:0]const u8, alloc: std.mem.Allocator, trace: *cons
 pub fn dumpCurrentStackTrace(first_address: ?usize, limits: WriteStackTraceLimits) void {
     var addrs: [32]usize = undefined;
     const captured = std.debug.captureCurrentStackTrace(.{ .first_address = first_address orelse @returnAddress() }, &addrs);
-    const stack: std.builtin.StackTrace = .{ .index = captured.return_addresses.len, .instruction_addresses = &addrs };
+    const stack: std.lang.StackTrace = .{ .index = captured.return_addresses.len, .instruction_addresses = &addrs };
     dumpStackTrace(stack, limits);
 }
 
@@ -1778,11 +1778,11 @@ pub const StoredTrace = struct {
     index: usize,
 
     pub const empty: StoredTrace = .{
-        .data = .{0} ** 31,
+        .data = @splat(0),
         .index = 0,
     };
 
-    pub fn trace(stored: *StoredTrace) std.builtin.StackTrace {
+    pub fn trace(stored: *StoredTrace) std.lang.StackTrace {
         return .{
             .index = stored.index,
             .instruction_addresses = &stored.data,
@@ -1804,7 +1804,7 @@ pub const StoredTrace = struct {
         return stored;
     }
 
-    pub fn from(stack_trace: ?*std.builtin.StackTrace) StoredTrace {
+    pub fn from(stack_trace: ?*std.lang.StackTrace) StoredTrace {
         if (stack_trace) |stack| {
             var data: [31]usize = undefined;
             @memset(&data, 0);
@@ -1877,7 +1877,7 @@ pub const WriteStackTraceLimits = struct {
 /// does not print the `^`, instead it highlights the word at the column. This
 /// Makes each frame take up two lines instead of three.
 pub fn writeStackTrace(
-    stack_trace: std.builtin.StackTrace,
+    stack_trace: std.lang.StackTrace,
     out_stream: anytype,
     debug_info: *debug.SelfInfo,
     tty_config: std.io.tty.Config,

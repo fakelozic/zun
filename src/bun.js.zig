@@ -188,8 +188,7 @@ pub const Run = struct {
             defer bun.default_allocator.free(escaped_path);
             const escaped_period = try escapeForJSString(bun.default_allocator, ctx.runtime_options.cron_period);
             defer bun.default_allocator.free(escaped_period);
-            const cron_script = try std.fmt.allocPrint(bun.default_allocator,
-                \\const mod = await import("{s}");
+            const cron_script = try bun.default_allocator.print(\\const mod = await import("{s}");
                 \\const scheduled = (mod.default || mod).scheduled;
                 \\if (typeof scheduled !== "function") throw new Error("Module does not export default.scheduled()");
                 \\const controller = {{ cron: "{s}", type: "scheduled", scheduledTime: Date.now() }};
@@ -597,7 +596,7 @@ pub fn runSourceWithHook(
 
     const trigger = bun.pathLiteral("/[eval]");
     const base_dir = std.fs.path.dirname(filename) orelse ".";
-    const entry_path = try std.fmt.allocPrint(allocator, "{s}{s}", .{ base_dir, trigger });
+    const entry_path = try allocator.print("{s}{s}", .{ base_dir, trigger });
 
     const log = try allocator.create(logger.Log);
     log.* = logger.Log.init(allocator);

@@ -42,13 +42,13 @@ pub const PackedNextPtr = enum(usize) {
         return (@intFromEnum(self) & 1) != 0;
     }
 
-    pub inline fn atomicLoadPtr(self: *const PackedNextPtr, ordering: std.builtin.AtomicOrder) ?*ConcurrentTask {
+    pub inline fn atomicLoadPtr(self: *const PackedNextPtr, ordering: std.lang.AtomicOrder) ?*ConcurrentTask {
         const value = @atomicLoad(usize, @as(*const usize, @ptrCast(self)), ordering);
         const addr = value & ~@as(usize, 1);
         return if (addr == 0) null else @ptrFromInt(addr);
     }
 
-    pub inline fn atomicStorePtr(self: *PackedNextPtr, ptr: ?*ConcurrentTask, ordering: std.builtin.AtomicOrder) void {
+    pub inline fn atomicStorePtr(self: *PackedNextPtr, ptr: ?*ConcurrentTask, ordering: std.lang.AtomicOrder) void {
         const ptr_bits = if (ptr) |p| @intFromPtr(p) else 0;
         // auto_delete is immutable after construction, so we can safely read it
         // with a relaxed load and preserve it in the new value.

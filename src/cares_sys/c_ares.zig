@@ -266,7 +266,7 @@ pub const struct_hostent = extern struct {
 
 pub const hostent_with_ttls = struct {
     hostent: *struct_hostent,
-    ttls: [256]c_int = [_]c_int{-1} ** 256,
+    ttls: [256]c_int = @splat(-1),
 
     pub const toJSResponse = @import("../runtime/dns_jsc/cares_jsc.zig").hostentWithTtlsToJSResponse;
 
@@ -1142,7 +1142,7 @@ pub const struct_any_reply = struct {
     }
 
     pub fn deinit(this: *struct_any_reply) void {
-        inline for (@typeInfo(struct_any_reply).@"struct".fields) |field| {
+        inline for (bun.meta.fieldsOf(@typeInfo(struct_any_reply).@"struct")) |field| {
             if (comptime std.mem.endsWith(u8, field.name, "_reply")) {
                 if (@field(this, field.name)) |reply| {
                     reply.deinit();

@@ -1378,7 +1378,7 @@ pub fn indexOfNotChar(slice: []const u8, char: u8) ?u32 {
 
 const invalid_char: u8 = 0xff;
 const hex_table: [256]u8 = brk: {
-    var values: [256]u8 = [_]u8{invalid_char} ** 256;
+    var values: [256]u8 = @splat(invalid_char);
     values['0'] = 0;
     values['1'] = 1;
     values['2'] = 2;
@@ -1933,7 +1933,7 @@ pub fn NewGlobLengthSorter(comptime Type: type, comptime field: string) type {
 pub fn moveAllSlices(comptime Type: type, container: *Type, from: string, to: string) void {
     const fields_we_care_about = comptime brk: {
         var count: usize = 0;
-        for (std.meta.fields(Type)) |field| {
+        for (bun.meta.fieldsOf(Type)) |field| {
             if (std.meta.isSlice(field.type) and std.meta.Child(field.type) == u8) {
                 count += 1;
             }
@@ -1941,7 +1941,7 @@ pub fn moveAllSlices(comptime Type: type, container: *Type, from: string, to: st
 
         var fields: [count][]const u8 = undefined;
         count = 0;
-        for (std.meta.fields(Type)) |field| {
+        for (bun.meta.fieldsOf(Type)) |field| {
             if (std.meta.isSlice(field.type) and std.meta.Child(field.type) == u8) {
                 fields[count] = field.name;
                 count += 1;
@@ -2101,7 +2101,7 @@ pub fn concatIfNeeded(
     }
 
     if (total_length < 1024) {
-        var stack = std.heap.stackFallback(1024, allocator);
+        var stack = bun.allocators.stackFallback(1024, allocator);
         const stack_copy = concatWithLength(stack.get(), args, total_length) catch unreachable;
         for (interned_strings_to_check) |interned| {
             if (eqlLong(stack_copy, interned, true)) {

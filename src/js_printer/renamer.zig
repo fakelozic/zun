@@ -74,7 +74,7 @@ pub const SymbolSlot = struct {
     pub const List = std.EnumArray(js_ast.Symbol.SlotNamespace, std.array_list.Managed(SymbolSlot));
 
     pub const InlineString = struct {
-        bytes: [15]u8 = [_]u8{0} ** 15,
+        bytes: [15]u8 = @splat(0),
         len: u8 = 0,
 
         pub fn init(str: []const u8) InlineString {
@@ -456,7 +456,7 @@ pub const NumberRenamer = struct {
     number_scope_pool: bun.HiveArray(NumberScope, 128).Fallback,
     arena: bun.ArenaAllocator,
     root: NumberScope = .{},
-    name_stack_fallback: std.heap.StackFallbackAllocator(512) = undefined,
+    name_stack_fallback: bun.allocators.StackFallbackAllocator(512) = undefined,
     name_temp_allocator: std.mem.Allocator = undefined,
 
     pub fn deinit(self: *NumberRenamer) void {

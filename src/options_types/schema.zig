@@ -47,7 +47,7 @@ pub const Reader = struct {
         const type_info = @typeInfo(Enum).Enum;
         const tag = try this.readInt(type_info.tag_type);
 
-        inline for (std.meta.fields(Enum)) |field| {
+        inline for (bun.meta.fieldsOf(Enum)) |field| {
             if (tag == field.value) {
                 return @field(Enum, field.name);
             }
@@ -2832,7 +2832,7 @@ pub const api = struct {
             };
 
             var i: usize = 0;
-            inline for (std.meta.fields(NpmRegistry)) |field| {
+            inline for (bun.meta.fieldsOf(NpmRegistry)) |field| {
                 const field_value = @field(this, field.name);
                 @memcpy(buf[i .. i + field_value.len], field_value);
                 @field(&out, field.name) = buf[i .. i + field_value.len];
@@ -2894,12 +2894,12 @@ pub const api = struct {
                 // Token
                 if (url.username.len == 0 and url.password.len > 0) {
                     registry.token = url.password;
-                    registry.url = try std.fmt.allocPrint(this.allocator, "{s}://{f}/{s}/", .{ url.displayProtocol(), url.displayHost(), std.mem.trim(u8, url.pathname, "/") });
+                    registry.url = try this.allocator.print("{s}://{f}/{s}/", .{ url.displayProtocol(), url.displayHost(), std.mem.trim(u8, url.pathname, "/") });
                 } else if (url.username.len > 0 and url.password.len > 0) {
                     registry.username = url.username;
                     registry.password = url.password;
 
-                    registry.url = try std.fmt.allocPrint(this.allocator, "{s}://{f}/{s}/", .{ url.displayProtocol(), url.displayHost(), std.mem.trim(u8, url.pathname, "/") });
+                    registry.url = try this.allocator.print("{s}://{f}/{s}/", .{ url.displayProtocol(), url.displayHost(), std.mem.trim(u8, url.pathname, "/") });
                 } else {
                     // Do not include a trailing slash. There might be parameters at the end.
                     registry.url = url.href;

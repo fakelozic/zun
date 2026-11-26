@@ -57,7 +57,7 @@ pub fn NewHTTPUpgradeClient(comptime ssl: bool) type {
 
         // Expected Sec-WebSocket-Accept value for handshake validation per RFC 6455 §4.2.2.
         // This is base64(SHA-1(Sec-WebSocket-Key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11")).
-        expected_accept: [28]u8 = .{0} ** 28,
+        expected_accept: [28]u8 = @splat(0),
 
         // Whether the upgrade request offered `permessage-deflate`. When this is
         // false (opt-out via `perMessageDeflate: false`) and the server responds
@@ -1444,9 +1444,7 @@ fn buildRequestBody(
     // Build request with user overrides
     if (user_host) |h| {
         return .{
-            .body = try std.fmt.allocPrint(
-                allocator,
-                "GET {s} HTTP/1.1\r\n" ++
+            .body = try allocator.print("GET {s} HTTP/1.1\r\n" ++
                     "Host: {s}\r\n" ++
                     "Connection: Upgrade\r\n" ++
                     "Upgrade: websocket\r\n" ++
@@ -1462,9 +1460,7 @@ fn buildRequestBody(
     }
 
     return .{
-        .body = try std.fmt.allocPrint(
-            allocator,
-            "GET {s} HTTP/1.1\r\n" ++
+        .body = try allocator.print("GET {s} HTTP/1.1\r\n" ++
                 "Host: {f}\r\n" ++
                 "Connection: Upgrade\r\n" ++
                 "Upgrade: websocket\r\n" ++

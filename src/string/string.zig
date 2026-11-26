@@ -217,9 +217,9 @@ pub const String = extern struct {
             return String.static(fmt);
         }
 
-        var sba = std.heap.stackFallback(512, bun.default_allocator);
+        var sba = bun.allocators.stackFallback(512, bun.default_allocator);
         const alloc = sba.get();
-        const buf = try std.fmt.allocPrint(alloc, fmt, args);
+        const buf = try alloc.print(fmt, args);
         defer alloc.free(buf);
         return cloneUTF8(buf);
     }

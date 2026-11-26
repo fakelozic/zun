@@ -452,7 +452,7 @@ pub fn writeHead(this: *NodeHTTPResponse, globalObject: *jsc.JSGlobalObject, cal
         break :brk 200;
     };
 
-    var stack_fallback = std.heap.stackFallback(256, bun.default_allocator);
+    var stack_fallback = bun.allocators.stackFallback(256, bun.default_allocator);
     const allocator = stack_fallback.get();
     const status_message_slice = if (!status_message_value.isUndefined())
         try status_message_value.toSlice(globalObject, allocator)
@@ -488,7 +488,7 @@ pub fn writeHead(this: *NodeHTTPResponse, globalObject: *jsc.JSGlobalObject, cal
         }
 
         const message = if (status_message_slice.len > 0) status_message_slice.slice() else "HM";
-        const status_message = bun.handleOom(std.fmt.allocPrint(allocator, "{d} {s}", .{ status_code, message }));
+        const status_message = bun.handleOom(allocator.print("{d} {s}", .{ status_code, message }));
         defer allocator.free(status_message);
         writeHeadInternal(this.raw_response.?, globalObject, status_message, headers_object_value);
         break :do_it;

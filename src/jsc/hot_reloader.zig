@@ -216,7 +216,7 @@ pub fn NewHotReloader(comptime Ctx: type, comptime EventLoopType: type, comptime
                 return .{
                     .reloader = reloader,
 
-                    .hashes = [_]u32{0} ** 8,
+                    .hashes = @as([8]u32, @splat(0)),
                     .paths = {},
                     .count = 0,
                     .concurrent_task = undefined,

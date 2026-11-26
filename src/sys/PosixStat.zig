@@ -100,7 +100,7 @@ pub const PosixStat = extern struct {
 /// Linux kernel `struct stat` layout (glibc-compatible on these arches).
 /// zig 0.16 removed std.os.linux Stat/std.c.Stat, but the raw fstatat64/fstat
 /// syscalls still fill exactly this layout — NOT PosixStat/uv_stat_t.
-pub const KernelStat = switch (builtin.cpu.arch) {
+pub const KernelStat = switch (builtin.target.cpu.arch) {
     .x86_64 => extern struct {
         dev: u64 = 0,
         ino: u64 = 0,

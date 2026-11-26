@@ -209,7 +209,7 @@ fn NewLexer_(
                 return;
             }
 
-            const errorMessage = std.fmt.allocPrint(self.allocator, format, args) catch unreachable;
+            const errorMessage = self.allocator.print(format, args) catch unreachable;
             try self.log.addRangeError(&self.source, r, errorMessage);
             self.prev_error_loc = r.loc;
 
@@ -226,7 +226,7 @@ fn NewLexer_(
                 return;
             }
 
-            const errorMessage = std.fmt.allocPrint(self.allocator, format, args) catch unreachable;
+            const errorMessage = self.allocator.print(format, args) catch unreachable;
             try self.log.addRangeErrorWithNotes(
                 &self.source,
                 r,
@@ -980,7 +980,7 @@ fn NewLexer_(
 
         pub fn expectContextualKeyword(noalias self: *LexerType, comptime keyword: string) !void {
             if (!self.isContextualKeyword(keyword)) {
-                if (@import("builtin").mode == std.builtin.OptimizeMode.Debug) {
+                if (@import("builtin").mode == std.lang.Optimize.debug) {
                     self.addError(self.start, "Expected \"{s}\" but found \"{s}\" (token: {s})", .{
                         keyword,
                         self.raw(),

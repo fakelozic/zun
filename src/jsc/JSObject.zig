@@ -49,7 +49,7 @@ pub const JSObject = opaque {
     /// prototype (`null_prototype = false`) unless you have a good reason not
     /// to.
     fn createFromStructWithPrototype(comptime T: type, pojo: T, global: *JSGlobalObject, comptime null_prototype: bool) bun.JSError!*JSObject {
-        const info: std.builtin.Type.Struct = @typeInfo(T).@"struct";
+        const info: std.lang.Type.Struct = @typeInfo(T).@"struct";
 
         const obj = obj: {
             const val = if (comptime null_prototype)

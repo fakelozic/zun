@@ -374,14 +374,14 @@ pub const Parser = struct {
 
         defer p.lexer.deinit();
 
-        var binary_expression_stack_heap = std.heap.stackFallback(42 * @sizeOf(ParserType.BinaryExpressionVisitor), bun.default_allocator);
+        var binary_expression_stack_heap = bun.allocators.stackFallback(42 * @sizeOf(ParserType.BinaryExpressionVisitor), bun.default_allocator);
         p.binary_expression_stack = std.array_list.Managed(ParserType.BinaryExpressionVisitor).initCapacity(
             binary_expression_stack_heap.get(),
             41, // one less in case of unlikely alignment between the stack buffer and reality
         ) catch unreachable; // stack allocation cannot fail
         defer p.binary_expression_stack.clearAndFree();
 
-        var binary_expression_simplify_stack_heap = std.heap.stackFallback(48 * @sizeOf(SideEffects.BinaryExpressionSimplifyVisitor), bun.default_allocator);
+        var binary_expression_simplify_stack_heap = bun.allocators.stackFallback(48 * @sizeOf(SideEffects.BinaryExpressionSimplifyVisitor), bun.default_allocator);
         p.binary_expression_simplify_stack = std.array_list.Managed(SideEffects.BinaryExpressionSimplifyVisitor).initCapacity(
             binary_expression_simplify_stack_heap.get(),
             47,
@@ -1099,7 +1099,7 @@ pub const Parser = struct {
                     var notes = ListManaged(logger.Data).init(p.allocator);
 
                     try notes.append(logger.Data{
-                        .text = try std.fmt.allocPrint(p.allocator, "Try require({f}) instead", .{bun.fmt.QuotedFormatter{ .text = record.path.text }}),
+                        .text = try p.allocator.print("Try require({f}) instead", .{bun.fmt.QuotedFormatter{ .text = record.path.text }}),
                     });
 
                     if (uses_module_ref) {

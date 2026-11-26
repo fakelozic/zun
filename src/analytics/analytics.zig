@@ -109,14 +109,14 @@ pub const Features = struct {
     pub const Formatter = struct {
         pub fn format(_: Formatter, writer: *std.Io.Writer) !void {
             const fields = comptime brk: {
-                const info: std.builtin.Type = @typeInfo(Features);
-                var buffer: [info.@"struct".decls.len][]const u8 = .{""} ** info.@"struct".decls.len;
+                const info: std.lang.Type = @typeInfo(Features);
+                var buffer: [bun.meta.declsOf(info.@"struct").len][]const u8 = @splat("");
                 var count: usize = 0;
-                for (info.@"struct".decls) |decl| {
+                for (bun.meta.declsOf(info.@"struct")) |decl| {
                     var f = &@field(Features, decl.name);
                     _ = &f;
                     const Field = @TypeOf(f);
-                    const FieldT: std.builtin.Type = @typeInfo(Field);
+                    const FieldT: std.lang.Type = @typeInfo(Field);
                     if (FieldT.pointer.child != usize) continue;
                     buffer[count] = decl.name;
                     count += 1;
@@ -188,7 +188,7 @@ pub const packed_features_list = brk: {
 };
 
 pub const PackedFeatures = brk: {
-    var fields: [64]std.builtin.Type.StructField = undefined;
+    var fields: [64]bun.meta.StructField = undefined;
     var i: usize = 0;
     for (packed_features_list) |name| {
         fields[i] = .{ .name = name, .type = bool, .default_value_ptr = &false, .is_comptime = false, .alignment = 0 };

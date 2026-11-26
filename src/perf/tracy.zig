@@ -43,7 +43,7 @@ const ___tracy_c_zone_context = extern struct {
 
 pub const Ctx = ___tracy_c_zone_context;
 
-pub inline fn trace(comptime src: std.builtin.SourceLocation) Ctx {
+pub inline fn trace(comptime src: std.lang.SourceLocation) Ctx {
     if (!enable) return .{};
 
     if (enable_callstack) {
@@ -69,7 +69,7 @@ pub inline fn trace(comptime src: std.builtin.SourceLocation) Ctx {
     }
 }
 
-pub inline fn traceNamed(comptime src: std.builtin.SourceLocation, comptime name: [*:0]const u8) Ctx {
+pub inline fn traceNamed(comptime src: std.lang.SourceLocation, comptime name: [*:0]const u8) Ctx {
     if (!enable) return .{};
 
     if (enable_callstack) {

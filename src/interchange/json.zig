@@ -501,7 +501,7 @@ pub fn toAST(
     comptime Type: type,
     value: Type,
 ) anyerror!js_ast.Expr {
-    const type_info: std.builtin.Type = @typeInfo(Type);
+    const type_info: std.lang.Type = @typeInfo(Type);
 
     switch (type_info) {
         .bool => {
@@ -565,7 +565,7 @@ pub fn toAST(
             return Expr.init(js_ast.E.Array, js_ast.E.Array{ .items = exprs }, logger.Loc.Empty);
         },
         .@"struct" => |Struct| {
-            const fields: []const std.builtin.Type.StructField = Struct.fields;
+            const fields: []const bun.meta.StructField = Struct.fields;
             var properties = try BabyList(js_ast.G.Property).initCapacity(allocator, fields.len);
 
             inline for (fields) |field| {

@@ -402,7 +402,7 @@ fn skipBranch(state: *State, glob: []const u8) void {
 }
 
 inline fn isSeparator(c: u8) bool {
-    if (comptime @import("builtin").os.tag == .windows) return c == '/' or c == '\\';
+    if (comptime @import("builtin").target.os.tag == .windows) return c == '/' or c == '\\';
     return c == '/';
 }
 

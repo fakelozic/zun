@@ -203,4 +203,4 @@ comptime {
 const builtin = @import("builtin");
 const recover = @import("./test_runner/harness/recover.zig");
 const std = @import("std");
-const TestFn = std.builtin.TestFn;
+const TestFn = std.lang.TestFn;

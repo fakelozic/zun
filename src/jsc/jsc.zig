@@ -6,7 +6,7 @@
 //! TODO: Remove remaining aliases to `webcore` and `api`
 
 /// The calling convention used for JavaScript functions <> Native
-pub const conv: std.builtin.CallingConvention = if (bun.Environment.isWindows and bun.Environment.isX64)
+pub const conv: std.lang.CallingConvention = if (bun.Environment.isWindows and bun.Environment.isX64)
     .{ .x86_64_sysv = .{} }
 else
     .c;
@@ -168,10 +168,10 @@ pub const API = bun.api;
 pub const Node = bun.api.node;
 
 const log = bun.Output.scoped(.JSC, .hidden);
-pub inline fn markBinding(src: std.builtin.SourceLocation) void {
+pub inline fn markBinding(src: std.lang.SourceLocation) void {
     log("{s} ({s}:{d})", .{ src.fn_name, src.file, src.line });
 }
-pub inline fn markMemberBinding(comptime class: anytype, src: std.builtin.SourceLocation) void {
+pub inline fn markMemberBinding(comptime class: anytype, src: std.lang.SourceLocation) void {
     if (!bun.Environment.enable_logs) return;
     const classname = switch (@typeInfo(@TypeOf(class))) {
         .pointer => class, // assumed to be a static string

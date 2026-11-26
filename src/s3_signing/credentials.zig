@@ -131,7 +131,7 @@ pub const S3Credentials = struct {
         // Format the date
         return .{
             .numeric_day = secs - time.secs,
-            .date = std.fmt.allocPrint(allocator, "{d:0>4}{d:0>2}{d:0>2}T{d:0>2}{d:0>2}{d:0>2}Z", .{
+            .date = allocator.print("{d:0>4}{d:0>2}{d:0>2}T{d:0>2}{d:0>2}{d:0>2}Z", .{
                 year,
                 month,
                 day,
@@ -437,10 +437,10 @@ pub const S3Credentials = struct {
                         return error.InvalidEndpoint;
                     }
                     // default to https://<BUCKET_NAME>.s3.<REGION>.amazonaws.com/
-                    endpoint = try std.fmt.allocPrint(bun.default_allocator, "{s}.s3.{s}.amazonaws.com", .{ bucket, region });
+                    endpoint = try bun.default_allocator.print("{s}.s3.{s}.amazonaws.com", .{ bucket, region });
                     break :brk_host endpoint;
                 }
-                endpoint = try std.fmt.allocPrint(bun.default_allocator, "s3.{s}.amazonaws.com", .{region});
+                endpoint = try bun.default_allocator.print("s3.{s}.amazonaws.com", .{region});
                 break :brk_host endpoint;
             }
         };
@@ -524,48 +524,48 @@ pub const S3Credentials = struct {
 
                 // Build query parameters in alphabetical order for AWS Signature V4 canonical request
                 const canonical = brk_canonical: {
-                    var stack_fallback = std.heap.stackFallback(512, bun.default_allocator);
+                    var stack_fallback = bun.allocators.stackFallback(512, bun.default_allocator);
                     const allocator = stack_fallback.get();
                     var query_parts: bun.BoundedArray([]const u8, 13) = .{};
 
                     // Add parameters in alphabetical order: Content-MD5, X-Amz-Acl, X-Amz-Algorithm, X-Amz-Credential, X-Amz-Date, X-Amz-Expires, X-Amz-Security-Token, X-Amz-SignedHeaders, response-content-disposition, response-content-type, x-amz-request-payer, x-amz-storage-class
 
                     if (encoded_content_md5) |encoded_content_md5_value| {
-                        try query_parts.append(try std.fmt.allocPrint(allocator, "Content-MD5={s}", .{encoded_content_md5_value}));
+                        try query_parts.append(try allocator.print("Content-MD5={s}", .{encoded_content_md5_value}));
                     }
 
                     if (acl) |acl_value| {
-                        try query_parts.append(try std.fmt.allocPrint(allocator, "X-Amz-Acl={s}", .{acl_value}));
+                        try query_parts.append(try allocator.print("X-Amz-Acl={s}", .{acl_value}));
                     }
 
-                    try query_parts.append(try std.fmt.allocPrint(allocator, "X-Amz-Algorithm=AWS4-HMAC-SHA256", .{}));
+                    try query_parts.append(try allocator.print("X-Amz-Algorithm=AWS4-HMAC-SHA256", .{}));
 
-                    try query_parts.append(try std.fmt.allocPrint(allocator, "X-Amz-Credential={s}%2F{s}%2F{s}%2F{s}%2Faws4_request", .{ this.accessKeyId, amz_day, region, service_name }));
+                    try query_parts.append(try allocator.print("X-Amz-Credential={s}%2F{s}%2F{s}%2F{s}%2Faws4_request", .{ this.accessKeyId, amz_day, region, service_name }));
 
-                    try query_parts.append(try std.fmt.allocPrint(allocator, "X-Amz-Date={s}", .{amz_date}));
+                    try query_parts.append(try allocator.print("X-Amz-Date={s}", .{amz_date}));
 
-                    try query_parts.append(try std.fmt.allocPrint(allocator, "X-Amz-Expires={}", .{expires}));
+                    try query_parts.append(try allocator.print("X-Amz-Expires={}", .{expires}));
 
                     if (encoded_session_token) |token| {
-                        try query_parts.append(try std.fmt.allocPrint(allocator, "X-Amz-Security-Token={s}", .{token}));
+                        try query_parts.append(try allocator.print("X-Amz-Security-Token={s}", .{token}));
                     }
 
-                    try query_parts.append(try std.fmt.allocPrint(allocator, "X-Amz-SignedHeaders=host", .{}));
+                    try query_parts.append(try allocator.print("X-Amz-SignedHeaders=host", .{}));
 
                     if (encoded_content_disposition) |cd| {
-                        try query_parts.append(try std.fmt.allocPrint(allocator, "response-content-disposition={s}", .{cd}));
+                        try query_parts.append(try allocator.print("response-content-disposition={s}", .{cd}));
                     }
 
                     if (encoded_content_type) |ct| {
-                        try query_parts.append(try std.fmt.allocPrint(allocator, "response-content-type={s}", .{ct}));
+                        try query_parts.append(try allocator.print("response-content-type={s}", .{ct}));
                     }
 
                     if (request_payer) {
-                        try query_parts.append(try std.fmt.allocPrint(allocator, "x-amz-request-payer=requester", .{}));
+                        try query_parts.append(try allocator.print("x-amz-request-payer=requester", .{}));
                     }
 
                     if (storage_class) |storage_class_value| {
-                        try query_parts.append(try std.fmt.allocPrint(allocator, "x-amz-storage-class={s}", .{storage_class_value}));
+                        try query_parts.append(try allocator.print("x-amz-storage-class={s}", .{storage_class_value}));
                     }
 
                     // Join query parameters with &
@@ -587,50 +587,50 @@ pub const S3Credentials = struct {
                 const signature = bun.hmac.generate(sigDateRegionServiceReq, signValue, .sha256, &hmac_sig_service) orelse return error.FailedToGenerateSignature;
 
                 // Build final URL with query parameters in alphabetical order to match canonical request
-                var url_stack_fallback = std.heap.stackFallback(512, bun.default_allocator);
+                var url_stack_fallback = bun.allocators.stackFallback(512, bun.default_allocator);
                 const url_allocator = url_stack_fallback.get();
                 var url_query_parts: bun.BoundedArray([]const u8, 14) = .{};
 
                 // Add parameters in alphabetical order: Content-MD5, X-Amz-Acl, X-Amz-Algorithm, X-Amz-Credential, X-Amz-Date, X-Amz-Expires, X-Amz-Security-Token, X-Amz-Signature, X-Amz-SignedHeaders, response-content-disposition, response-content-type, x-amz-request-payer, x-amz-storage-class
 
                 if (encoded_content_md5) |encoded_content_md5_value| {
-                    try url_query_parts.append(try std.fmt.allocPrint(url_allocator, "Content-MD5={s}", .{encoded_content_md5_value}));
+                    try url_query_parts.append(try url_allocator.print("Content-MD5={s}", .{encoded_content_md5_value}));
                 }
 
                 if (acl) |acl_value| {
-                    try url_query_parts.append(try std.fmt.allocPrint(url_allocator, "X-Amz-Acl={s}", .{acl_value}));
+                    try url_query_parts.append(try url_allocator.print("X-Amz-Acl={s}", .{acl_value}));
                 }
 
-                try url_query_parts.append(try std.fmt.allocPrint(url_allocator, "X-Amz-Algorithm=AWS4-HMAC-SHA256", .{}));
+                try url_query_parts.append(try url_allocator.print("X-Amz-Algorithm=AWS4-HMAC-SHA256", .{}));
 
-                try url_query_parts.append(try std.fmt.allocPrint(url_allocator, "X-Amz-Credential={s}%2F{s}%2F{s}%2F{s}%2Faws4_request", .{ this.accessKeyId, amz_day, region, service_name }));
+                try url_query_parts.append(try url_allocator.print("X-Amz-Credential={s}%2F{s}%2F{s}%2F{s}%2Faws4_request", .{ this.accessKeyId, amz_day, region, service_name }));
 
-                try url_query_parts.append(try std.fmt.allocPrint(url_allocator, "X-Amz-Date={s}", .{amz_date}));
+                try url_query_parts.append(try url_allocator.print("X-Amz-Date={s}", .{amz_date}));
 
-                try url_query_parts.append(try std.fmt.allocPrint(url_allocator, "X-Amz-Expires={}", .{expires}));
+                try url_query_parts.append(try url_allocator.print("X-Amz-Expires={}", .{expires}));
 
                 if (encoded_session_token) |token| {
-                    try url_query_parts.append(try std.fmt.allocPrint(url_allocator, "X-Amz-Security-Token={s}", .{token}));
+                    try url_query_parts.append(try url_allocator.print("X-Amz-Security-Token={s}", .{token}));
                 }
 
-                try url_query_parts.append(try std.fmt.allocPrint(url_allocator, "X-Amz-Signature={s}", .{std.fmt.bytesToHex(signature[0..DIGESTED_HMAC_256_LEN], .lower)}));
+                try url_query_parts.append(try url_allocator.print("X-Amz-Signature={s}", .{std.fmt.bytesToHex(signature[0..DIGESTED_HMAC_256_LEN], .lower)}));
 
-                try url_query_parts.append(try std.fmt.allocPrint(url_allocator, "X-Amz-SignedHeaders=host", .{}));
+                try url_query_parts.append(try url_allocator.print("X-Amz-SignedHeaders=host", .{}));
 
                 if (encoded_content_disposition) |cd| {
-                    try url_query_parts.append(try std.fmt.allocPrint(url_allocator, "response-content-disposition={s}", .{cd}));
+                    try url_query_parts.append(try url_allocator.print("response-content-disposition={s}", .{cd}));
                 }
 
                 if (encoded_content_type) |ct| {
-                    try url_query_parts.append(try std.fmt.allocPrint(url_allocator, "response-content-type={s}", .{ct}));
+                    try url_query_parts.append(try url_allocator.print("response-content-type={s}", .{ct}));
                 }
 
                 if (request_payer) {
-                    try url_query_parts.append(try std.fmt.allocPrint(url_allocator, "x-amz-request-payer=requester", .{}));
+                    try url_query_parts.append(try url_allocator.print("x-amz-request-payer=requester", .{}));
                 }
 
                 if (storage_class) |storage_class_value| {
-                    try url_query_parts.append(try std.fmt.allocPrint(url_allocator, "x-amz-storage-class={s}", .{storage_class_value}));
+                    try url_query_parts.append(try url_allocator.print("x-amz-storage-class={s}", .{storage_class_value}));
                 }
 
                 // Join URL query parameters with &
@@ -642,7 +642,7 @@ pub const S3Credentials = struct {
                     url_allocator.free(part);
                 }
 
-                break :brk try std.fmt.allocPrint(bun.default_allocator, "{s}://{s}{s}?{s}", .{ protocol, host, normalizedPath, url_query_string.items });
+                break :brk try bun.default_allocator.print("{s}://{s}{s}?{s}", .{ protocol, host, normalizedPath, url_query_string.items });
             } else {
                 const canonical = try CanonicalRequest.format(
                     &tmp_buffer,
@@ -668,9 +668,7 @@ pub const S3Credentials = struct {
 
                 const signature = bun.hmac.generate(sigDateRegionServiceReq, signValue, .sha256, &hmac_sig_service) orelse return error.FailedToGenerateSignature;
 
-                break :brk try std.fmt.allocPrint(
-                    bun.default_allocator,
-                    "AWS4-HMAC-SHA256 Credential={s}/{s}/{s}/{s}/aws4_request, SignedHeaders={s}, Signature={s}",
+                break :brk try bun.default_allocator.print("AWS4-HMAC-SHA256 Credential={s}/{s}/{s}/{s}/aws4_request, SignedHeaders={s}, Signature={s}",
                     .{ this.accessKeyId, amz_day, region, service_name, signed_headers, std.fmt.bytesToHex(signature[0..DIGESTED_HMAC_256_LEN], .lower) },
                 );
             }
@@ -698,7 +696,7 @@ pub const S3Credentials = struct {
             .acl = signOptions.acl,
             .storage_class = signOptions.storage_class,
             .request_payer = request_payer,
-            .url = try std.fmt.allocPrint(bun.default_allocator, "{s}://{s}{s}{s}", .{ protocol, host, normalizedPath, if (search_params) |s| s else "" }),
+            .url = try bun.default_allocator.print("{s}://{s}{s}{s}", .{ protocol, host, normalizedPath, if (search_params) |s| s else "" }),
             ._headers = [_]picohttp.Header{
                 .{ .name = "x-amz-content-sha256", .value = aws_content_hash },
                 .{ .name = "x-amz-date", .value = amz_date },
