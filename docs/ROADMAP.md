@@ -28,6 +28,11 @@ Full gap list against Bun canary, plus the task breakdown: `docs/GAP.md`.
   through `$bindgen("x.bind.ts")`, 456 call sites over 153 `.bind.ts` files, so reusing it first needs a Zig output mode for bindgen) → Zig restored from 1.3.14 → Go (typescript-go) where it fits → port from Rust only for behaviour that failing tests show has changed.
 - Zig migrations are **scripts** (`scripts/fix_zig017*`, alongside cruller's `fix_zig016_*.py`), so restored code and future Zig upgrades go through the same automation.
 - One integration owner merges agent branches. Shared files (`build.zig`, codegen, CLI dispatch) change only through small, green merges.
+- **Security behaviour matches upstream (decided 2026-11-26):** where Bun 1.4.5 and Node agree, zun fixes bugs that upstream
+  has fixed but is not stricter than upstream. So: a blocked key (C2) stays an overridable `CERT_REVOKED`, as in Bun
+  and Node (review C2-1); `fetch` stays as lenient as Bun 1.4.5 on chunked trailers and framing (FETCH-2, FETCH-3).
+  zun-only bugs (TLS-CA-1, TLS-ID-1, C2-2, H2C-1, …) are still fixed.
+- Prepared but unbuilt fixes live on `prep/<name>` branches and reach `bootstrap` only after a build and green gate tests.
 
 ## Security track (continuous, starts now)
 

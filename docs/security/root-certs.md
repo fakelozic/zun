@@ -24,7 +24,7 @@
 **Limits (verified 2026-11-26, `review-2026-11-26-verify-C2.md`):** the blocklist is an *overridable* `CERT_REVOKED`,
 as in Bun 1.4.5 and Node. With `rejectUnauthorized:false` a blocked chain still connects (`authorizationError:
 "CERT_REVOKED"`). The HTTP/3 server does **not** enforce client-certificate verification at all (C2-2, under H3).
-Whether zun should make blocked keys a hard failure is an open owner decision.
+**Decided 2026-11-26:** keep it overridable, matching Bun and Node (see ROADMAP decisions).
 
 | Path | How |
 |------|-----|
