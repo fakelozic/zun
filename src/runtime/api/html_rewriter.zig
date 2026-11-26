@@ -612,6 +612,7 @@ pub const HTMLRewriter = struct {
                 .list = .{
                     .items = &.{},
                     .capacity = 0,
+                    .pointer_stability = .{},
                 },
             };
 

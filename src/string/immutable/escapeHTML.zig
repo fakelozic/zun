@@ -158,6 +158,7 @@ pub fn escapeHTMLForLatin1Input(allocator: std.mem.Allocator, latin1: []const u8
                 .items = &.{},
                 .capacity = 0,
                 .allocator = allocator,
+                .pointer_stability = .{},
             };
 
             if (comptime Environment.enableSIMD) {

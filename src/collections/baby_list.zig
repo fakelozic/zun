@@ -569,6 +569,7 @@ pub fn BabyList(comptime Type: type) type {
             return .{
                 .items = this.slice(),
                 .capacity = this.cap,
+                .pointer_stability = .{},
             };
         }
 

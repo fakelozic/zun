@@ -69,6 +69,7 @@ pub const S3HttpSimpleTask = struct {
         .list = .{
             .items = &.{},
             .capacity = 0,
+            .pointer_stability = .{},
         },
     },
     result: bun.http.HTTPClientResult = .{},
@@ -303,6 +304,7 @@ pub const S3HttpSimpleTask = struct {
                             .list = .{
                                 .items = &.{},
                                 .capacity = 0,
+                                .pointer_stability = .{},
                             },
                         };
                         try callback(.{

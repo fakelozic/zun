@@ -19,6 +19,7 @@ pub const S3HttpDownloadStreamingTask = struct {
         .list = .{
             .items = &.{},
             .capacity = 0,
+            .pointer_stability = .{},
         },
     },
     mutex: bun.Mutex = .{},
@@ -27,6 +28,7 @@ pub const S3HttpDownloadStreamingTask = struct {
         .list = .{
             .items = &.{},
             .capacity = 0,
+            .pointer_stability = .{},
         },
     },
     state: State.AtomicType = State.AtomicType.init(@bitCast(State{})),

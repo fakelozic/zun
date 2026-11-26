@@ -254,9 +254,9 @@ pub fn killDescendants() void {
 
     const self_pid = std.c.getpid();
 
-    var to_visit: std.ArrayListUnmanaged(std.c.pid_t) = .{ .items = &.{}, .capacity = 0 };
+    var to_visit: std.ArrayListUnmanaged(std.c.pid_t) = .{ .items = &.{}, .capacity = 0, .pointer_stability = .{} };
     defer to_visit.deinit(bun.default_allocator);
-    var to_kill: std.ArrayListUnmanaged(std.c.pid_t) = .{ .items = &.{}, .capacity = 0 };
+    var to_kill: std.ArrayListUnmanaged(std.c.pid_t) = .{ .items = &.{}, .capacity = 0, .pointer_stability = .{} };
     defer to_kill.deinit(bun.default_allocator);
 
     to_visit.append(bun.default_allocator, self_pid) catch return;

@@ -428,6 +428,7 @@ pub const FetchTasklet = struct {
                     .list = .{
                         .items = &.{},
                         .capacity = 0,
+                        .pointer_stability = .{},
                     },
                 };
 
@@ -867,6 +868,7 @@ pub const FetchTasklet = struct {
                 .list = .{
                     .items = &.{},
                     .capacity = 0,
+                    .pointer_stability = .{},
                 },
             };
 
@@ -939,6 +941,7 @@ pub const FetchTasklet = struct {
             .list = .{
                 .items = &.{},
                 .capacity = 0,
+                .pointer_stability = .{},
             },
         };
 
@@ -1043,6 +1046,7 @@ pub const FetchTasklet = struct {
                 .list = .{
                     .items = &.{},
                     .capacity = 0,
+                    .pointer_stability = .{},
                 },
             },
             .response_buffer = MutableString{
@@ -1050,6 +1054,7 @@ pub const FetchTasklet = struct {
                 .list = .{
                     .items = &.{},
                     .capacity = 0,
+                    .pointer_stability = .{},
                 },
             },
             .javascript_vm = jsc_vm,
@@ -1466,6 +1471,7 @@ pub const FetchTasklet = struct {
                     .list = .{
                         .items = &.{},
                         .capacity = 0,
+                        .pointer_stability = .{},
                     },
                 };
             }

@@ -4674,6 +4674,7 @@ pub const H2FrameParser = struct {
                         .list = .{
                             .items = &.{},
                             .capacity = 0,
+                            .pointer_stability = .{},
                         },
                     },
                     .streams = bun.U32HashMap(*Stream).init(bun.default_allocator),

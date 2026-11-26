@@ -592,6 +592,7 @@ pub const Value = union(Tag) {
                             },
                             .capacity = bytes.len,
                             .allocator = bun.default_allocator,
+                            .pointer_stability = .{},
                         },
                         .was_string = false,
                     },
@@ -1508,6 +1509,7 @@ pub const ValueBufferer = struct {
                 .list = .{
                     .items = &.{},
                     .capacity = 0,
+                    .pointer_stability = .{},
                 },
             },
         };

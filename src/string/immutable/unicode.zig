@@ -1127,6 +1127,7 @@ pub fn toUTF16Alloc(allocator: std.mem.Allocator, bytes: []const u8, comptime fa
                 .items = out[0..i],
                 .capacity = out.len,
                 .allocator = allocator,
+                .pointer_stability = .{},
             };
         } else null;
         var output = output_ orelse fallback: {

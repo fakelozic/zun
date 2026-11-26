@@ -508,6 +508,7 @@ pub const Bytes = struct {
                 .items = &.{},
                 .capacity = 0,
                 .allocator = this.allocator,
+                .pointer_stability = .{},
             },
         };
 
@@ -516,6 +517,7 @@ pub const Bytes = struct {
                 .items = ptr[0..this.len],
                 .capacity = this.cap,
                 .allocator = this.allocator,
+                .pointer_stability = .{},
             },
         };
 

@@ -1487,7 +1487,7 @@ pub const JSZlib = struct {
                     defer reader.deinit();
                     return globalThis.throwValue(ZigString.init(reader.errorMessage() orelse "Zlib returned an error").toErrorInstance(globalThis));
                 };
-                reader.list = .{ .items = reader.list.items, .capacity = reader.list.items.len };
+                reader.list = .{ .items = reader.list.items, .capacity = reader.list.items.len, .pointer_stability = .{} };
                 reader.list_ptr = &reader.list;
 
                 var array_buffer = jsc.ArrayBuffer.fromBytes(reader.list.items, .Uint8Array);
@@ -1593,7 +1593,7 @@ pub const JSZlib = struct {
                     defer reader.deinit();
                     return globalThis.throwValue(ZigString.init(reader.errorMessage() orelse "Zlib returned an error").toErrorInstance(globalThis));
                 };
-                reader.list = .{ .items = bun.handleOom(reader.list.toOwnedSlice(allocator)), .capacity = 0 };
+                reader.list = .{ .items = bun.handleOom(reader.list.toOwnedSlice(allocator)), .capacity = 0, .pointer_stability = .{} };
                 reader.list.capacity = reader.list.items.len;
                 reader.list_ptr = &reader.list;
 

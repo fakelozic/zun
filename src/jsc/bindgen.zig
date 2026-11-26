@@ -150,6 +150,7 @@ pub fn BindgenArray(comptime Child: type) type {
             var unmanaged: std.ArrayListUnmanaged(Child.ExternType) = .{
                 .items = data[0..length],
                 .capacity = capacity,
+                .pointer_stability = .{},
             };
 
             if (comptime !bun.use_mimalloc) {
@@ -199,6 +200,7 @@ pub fn BindgenArray(comptime Child: type) type {
                 const new_unmanaged: std.ArrayListUnmanaged(Child.ZigType) = .{
                     .items = items_ptr[0..length],
                     .capacity = new_capacity,
+                    .pointer_stability = .{},
                 };
                 return .fromUnmanaged(.{}, new_unmanaged);
             }

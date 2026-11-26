@@ -319,10 +319,12 @@ pub const us_socket_stream_buffer_t = extern struct {
                 .allocator = bun.default_allocator,
                 .items = buffer_ptr[0..this.list_len],
                 .capacity = this.list_cap,
+                .pointer_stability = .{},
             } else .{
                 .allocator = bun.default_allocator,
                 .items = &.{},
                 .capacity = 0,
+                .pointer_stability = .{},
             },
             .cursor = this.cursor,
         };

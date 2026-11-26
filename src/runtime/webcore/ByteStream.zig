@@ -4,6 +4,7 @@ buffer: std.array_list.Managed(u8) = .{
     .allocator = bun.default_allocator,
     .items = &.{},
     .capacity = 0,
+    .pointer_stability = .{},
 },
 has_received_last_chunk: bool = false,
 pending: streams.Result.Pending = .{ .result = .{ .done = {} } },
@@ -401,6 +402,7 @@ pub fn toAnyBlob(this: *@This()) ?Blob.Any {
             .allocator = bun.default_allocator,
             .items = &.{},
             .capacity = 0,
+            .pointer_stability = .{},
         };
         this.done = true;
         this.pending.result.deinit();
