@@ -565,7 +565,7 @@ pub fn toAST(
             return Expr.init(js_ast.E.Array, js_ast.E.Array{ .items = exprs }, logger.Loc.Empty);
         },
         .@"struct" => |Struct| {
-            const fields: []const bun.meta.StructField = Struct.fields;
+            const fields: []const bun.meta.StructField = comptime bun.meta.fieldsOf(Struct);
             var properties = try BabyList(js_ast.G.Property).initCapacity(allocator, fields.len);
 
             inline for (fields) |field| {
@@ -605,7 +605,7 @@ pub fn toAST(
         .@"union" => |Union| {
             const info = Union;
             if (info.tag_type) |UnionTagType| {
-                inline for (info.fields) |u_field| {
+                inline for (comptime bun.meta.fieldsOf(info)) |u_field| {
                     if (value == @field(UnionTagType, u_field.name)) {
                         const StructType = bun.meta.ReifyStruct(.auto, null, &.{.{
                             .name = u_field.name,

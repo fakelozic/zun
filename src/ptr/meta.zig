@@ -59,16 +59,16 @@ pub const PointerInfo = struct {
             .c => @compileError("C pointers not supported"),
         }
 
-        if (pointer_info.is_const and !options.allow_const) {
+        if (pointer_info.attrs.@"const" and !options.allow_const) {
             @compileError("const pointers not supported");
         }
-        if (pointer_info.is_volatile) {
+        if (pointer_info.attrs.@"volatile") {
             @compileError("volatile pointers not supported");
         }
-        if ((pointer_info.alignment orelse @alignOf(Child)) != @alignOf(Child)) {
+        if ((pointer_info.attrs.@"align" orelse @alignOf(Child)) != @alignOf(Child)) {
             @compileError("non-default alignment not supported");
         }
-        if (pointer_info.is_allowzero) {
+        if (pointer_info.attrs.@"allowzero") {
             @compileError("allowzero not supported");
         }
         if (pointer_info.sentinel_ptr != null) {
@@ -86,13 +86,9 @@ pub const PointerInfo = struct {
 pub fn AddConst(Pointer: type) type {
     switch (@typeInfo(Pointer)) {
         .pointer => |ptr| {
-            return @Pointer(ptr.size, .{
-                .@"const" = true,
-                .@"volatile" = ptr.is_volatile,
-                .@"allowzero" = ptr.is_allowzero,
-                .@"align" = ptr.alignment,
-                .@"addrspace" = ptr.address_space,
-            }, ptr.child, ptr.sentinel());
+            var attrs = ptr.attrs;
+            attrs.@"const" = true;
+            return @Pointer(ptr.size, attrs, ptr.child, ptr.sentinel());
         },
         .optional => |opt| return ?AddConst(opt.child),
         else => @compileError("`Pointer` must be a (possibly optional) pointer or slice"),

@@ -436,7 +436,7 @@ pub fn len(value: anytype) usize {
             .slice => value.len,
         },
         .@"struct" => |info| if (info.is_tuple) {
-            return info.fields.len;
+            return info.field_names.len;
         } else @compileError("invalid type given to std.mem.len"),
         else => @compileError("invalid type given to std.mem.len"),
     };
@@ -448,13 +448,8 @@ fn Span(comptime T: type) type {
             return ?Span(optional_info.child);
         },
         .pointer => |ptr_info| {
-            const attrs: std.lang.Type.Pointer.Attributes = .{
-                .@"const" = ptr_info.is_const,
-                .@"volatile" = ptr_info.is_volatile,
-                .@"allowzero" = ptr_info.is_allowzero and ptr_info.size != .c,
-                .@"align" = ptr_info.alignment,
-                .@"addrspace" = ptr_info.address_space,
-            };
+            var attrs = ptr_info.attrs;
+            attrs.@"allowzero" = attrs.@"allowzero" and ptr_info.size != .c;
             switch (ptr_info.size) {
                 .one => switch (@typeInfo(ptr_info.child)) {
                     .array => |info| return @Pointer(.slice, attrs, info.child, info.sentinel()),
@@ -1247,12 +1242,22 @@ pub fn ComptimeEnumMap(comptime T: type) type {
     return ComptimeStringMap(T, entries);
 }
 
+/// Reinterpret the in-memory bytes of `value` as a `To` (same size required).
+///
+/// Zig 0.17 made `@bitCast` a cast between *logical bit* representations and rejects
+/// `extern struct` / `extern union` operands. Bun used `@bitCast` on extern types for
+/// type punning (memory layout); this is the explicit spelling of that. Works at comptime too.
+pub inline fn memCast(comptime To: type, value: anytype) To {
+    if (comptime @sizeOf(To) != @sizeOf(@TypeOf(value))) @compileError("memCast: size mismatch between " ++ @typeName(To) ++ " and " ++ @typeName(@TypeOf(value)));
+    return std.mem.bytesToValue(To, &std.mem.toBytes(value));
+}
+
 /// Write 0's for every byte in Type
 /// Ignores default struct values.
 pub fn zero(comptime Type: type) Type {
     var out: [@sizeOf(Type)]u8 align(@alignOf(Type)) = undefined;
     @memset(@as([*]u8, @ptrCast(&out))[0..out.len], 0);
-    return @as(Type, @bitCast(out));
+    return memCast(Type, out);
 }
 pub const c_ares = @import("./cares_sys/c_ares.zig");
 pub const URL = @import("./url/url.zig").URL;
@@ -1398,13 +1403,9 @@ fn SliceTo(comptime T: type, comptime end: std.meta.Elem(T)) type {
                 .many => if (std.meta.sentinel(T)) |s| s == end else true,
                 .c => true,
             };
-            return @Pointer(.slice, .{
-                .@"const" = ptr_info.is_const,
-                .@"volatile" = ptr_info.is_volatile,
-                .@"allowzero" = ptr_info.is_allowzero and ptr_info.size != .c,
-                .@"align" = ptr_info.alignment,
-                .@"addrspace" = ptr_info.address_space,
-            }, Elem, if (have_sentinel) end else null);
+            var attrs = ptr_info.attrs;
+            attrs.@"allowzero" = attrs.@"allowzero" and ptr_info.size != .c;
+            return @Pointer(.slice, attrs, Elem, if (have_sentinel) end else null);
         },
         else => {},
     }
@@ -3716,8 +3717,8 @@ pub inline fn wrappingNegation(val: anytype) @TypeOf(val) {
 fn assertNoPointers(T: type) void {
     switch (@typeInfo(T)) {
         .pointer => @compileError("no pointers!"),
-        inline .@"struct", .@"union" => |s| for (s.fields) |field| {
-            assertNoPointers(field.type);
+        inline .@"struct", .@"union" => |s| for (s.field_types) |FieldType| {
+            assertNoPointers(FieldType);
         },
         .array => |a| assertNoPointers(a.child),
         else => {},

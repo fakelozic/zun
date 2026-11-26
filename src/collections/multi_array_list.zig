@@ -32,7 +32,7 @@ pub fn MultiArrayList(comptime T: type) type {
         const Elem = switch (@typeInfo(T)) {
             .@"struct" => T,
             .@"union" => |u| struct {
-                pub const Bare = @import("bun").meta.ReifyUnion(u.layout, null, u.fields);
+                pub const Bare = @import("bun").meta.ReifyUnion(u.layout, null, @import("bun").meta.fieldsOf(u));
                 pub const Tag =
                     u.tag_type orelse @compileError("MultiArrayList does not support untagged unions");
                 tags: Tag,
@@ -142,7 +142,7 @@ pub fn MultiArrayList(comptime T: type) type {
 
         const Self = @This();
 
-        const fields = meta.fields(Elem);
+        const fields = bun.meta.fieldsOf(Elem);
         /// `sizes.bytes` is an array of @sizeOf each T field. Sorted by alignment, descending.
         /// `sizes.fields` is an array mapping from `sizes.bytes` array index to field index.
         const sizes = blk: {

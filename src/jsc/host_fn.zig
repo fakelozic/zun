@@ -506,12 +506,12 @@ pub fn wrapInstanceMethod(
             globalThis: *jsc.JSGlobalObject,
             callframe: *jsc.CallFrame,
         ) bun.JSError!jsc.JSValue {
-            const arguments = callframe.arguments_old(FunctionTypeInfo.params.len);
+            const arguments = callframe.arguments_old(FunctionTypeInfo.param_types.len);
             var iter = jsc.CallFrame.ArgumentsSlice.init(globalThis.bunVM(), arguments.slice());
             var args: Args = undefined;
 
             const has_exception_ref: bool = comptime brk: {
-                for (FunctionTypeInfo.params) |param| {
+                for (bun.meta.paramsOf(FunctionTypeInfo)) |param| {
                     if (param.type.? == jsc.C.ExceptionRef) {
                         break :brk true;
                     }
@@ -522,7 +522,7 @@ pub fn wrapInstanceMethod(
             var exception_value = [_]jsc.C.JSValueRef{null};
             const exception: jsc.C.ExceptionRef = if (comptime has_exception_ref) &exception_value else undefined;
 
-            inline for (FunctionTypeInfo.params, 0..) |param, i| {
+            inline for (comptime bun.meta.paramsOf(FunctionTypeInfo), 0..) |param, i| {
                 const ArgType = param.type.?;
                 switch (ArgType) {
                     *Container => {
@@ -666,11 +666,11 @@ pub fn wrapStaticMethod(
             globalThis: *jsc.JSGlobalObject,
             callframe: *jsc.CallFrame,
         ) bun.JSError!jsc.JSValue {
-            const arguments = callframe.arguments_old(FunctionTypeInfo.params.len);
+            const arguments = callframe.arguments_old(FunctionTypeInfo.param_types.len);
             var iter = jsc.CallFrame.ArgumentsSlice.init(globalThis.bunVM(), arguments.slice());
             var args: Args = undefined;
 
-            inline for (FunctionTypeInfo.params, 0..) |param, i| {
+            inline for (comptime bun.meta.paramsOf(FunctionTypeInfo), 0..) |param, i| {
                 const ArgType = param.type.?;
                 switch (param.type.?) {
                     *jsc.JSGlobalObject => {

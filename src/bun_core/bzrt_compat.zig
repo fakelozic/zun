@@ -481,8 +481,8 @@ pub fn fixedBufferStream(buffer: anytype) FixedBufferStream(@TypeOf(buffer)) {
 
 pub fn FixedBufferStream(comptime BufferPtr: type) type {
     const is_const = switch (@typeInfo(BufferPtr)) {
-        .pointer => |ptr| ptr.is_const or switch (@typeInfo(ptr.child)) {
-            .array => ptr.is_const,
+        .pointer => |ptr| ptr.attrs.@"const" or switch (@typeInfo(ptr.child)) {
+            .array => ptr.attrs.@"const",
             else => false,
         },
         else => @compileError("bad type"),

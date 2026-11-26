@@ -108,13 +108,13 @@ const Precompute = struct {
         @setEvalBranchQuota(10_000);
         const info = @typeInfo(GraphemeBreakNoControl).@"enum";
         for (0..max_state_int + 1) |state_int| {
-            for (info.fields) |field1| {
-                for (info.fields) |field2| {
+            for (info.field_names) |name1| {
+                for (info.field_names) |name2| {
                     var state: BreakState = @enumFromInt(state_int);
 
                     const key: Key = .{
-                        .gb1 = @field(GraphemeBreakNoControl, field1.name),
-                        .gb2 = @field(GraphemeBreakNoControl, field2.name),
+                        .gb1 = @field(GraphemeBreakNoControl, name1),
+                        .gb2 = @field(GraphemeBreakNoControl, name2),
                         .state = state,
                     };
                     const v = computeGraphemeBreakNoControl(

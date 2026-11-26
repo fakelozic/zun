@@ -1181,7 +1181,9 @@ pub const DynamicBitSetUnmanaged = struct {
 };
 
 pub const AutoBitSet = union(enum) {
-    pub const Static = ArrayBitSet(usize, (@bitSizeOf(DynamicBitSetUnmanaged) - 1));
+    // Zig 0.17: @bitSizeOf is only defined for types with a logical bit layout
+    // (not auto-layout structs); 0.16 returned @sizeOf * 8 here.
+    pub const Static = ArrayBitSet(usize, (@sizeOf(DynamicBitSetUnmanaged) * 8 - 1));
 
     static: Static,
     dynamic: DynamicBitSetUnmanaged,

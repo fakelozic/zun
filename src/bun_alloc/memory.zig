@@ -106,6 +106,7 @@ pub fn deinit(ptr_or_slice: anytype) void {
     switch (comptime @typeInfo(Child)) {
         .void, .bool, .int, .float, .pointer, .comptime_float, .comptime_int => return,
         .undefined, .null, .error_set, .@"enum", .vector => return,
+        .spirv => @compileError("unsupported type: " ++ @typeName(Child)), // new in Zig 0.17
         .array => {
             for (ptr_or_slice) |*elem| {
                 deinit(elem);
@@ -181,13 +182,7 @@ pub fn rebaseSlice(slice: []const u8, old_base: [*]const u8, new_base: [*]const 
 /// the allocation to free it.
 pub fn dropSentinel(ptr: anytype, allocator: std.mem.Allocator) blk: {
     const info = @typeInfo(@TypeOf(ptr)).pointer;
-    break :blk bun.OOM!@Pointer(.slice, .{
-        .@"const" = info.is_const,
-        .@"volatile" = info.is_volatile,
-        .@"allowzero" = info.is_allowzero,
-        .@"align" = info.alignment,
-        .@"addrspace" = info.address_space,
-    }, info.child, null);
+    break :blk bun.OOM!@Pointer(.slice, info.attrs, info.child, null);
 } {
     const info = @typeInfo(@TypeOf(ptr)).pointer;
     const Child = info.child;
