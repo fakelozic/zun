@@ -147,4 +147,10 @@ swapped field by field. Probe: `probes/byteswap-packed/byteswap.zig`, run with `
 client (security `known-issues.md` H2C-1). **Do:** to serialize a wire header, write each field with
 `std.mem.writeInt(..., .big)` (or use an `extern struct` of byte arrays), and never byte-swap a packed struct to get
 network order.
+**When it changed (verified in the installed std sources):** Zig 0.16.0's `byteSwapAllFields` already does the
+whole-integer swap for packed structs (`lib/std/mem.zig:2233`), so this isn't new in 0.17. Bun 1.3.14's pinned Zig (`oven-sh/zig@04e7f6ac`, `lib/std/mem.zig` `byteSwapAllFields`: loops over the fields even for a packed struct)
+swapped packed fields one by one, and cruller's 0.16 port (`a1c009d`) silently changed the meaning. **Both** zun HTTP/2
+implementations use it (`src/http/h2_client/ClientSession.zig`, `src/http/H2FrameParser.zig`,
+`src/runtime/api/bun/h2_frame_parser.zig` for node:http2). zun talking to zun is symmetric, so the bug stays hidden;
+it only shows against a real peer (Node, a browser, nginx).
 
