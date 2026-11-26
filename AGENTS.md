@@ -1,8 +1,10 @@
 # AGENTS.md: working on zun
 
 Zun is a **Zig continuation of Bun**: a hard fork of cruller (Bun 1.3.14 ported to Zig 0.16)
-that we're growing toward 1:1 parity with current Bun (1.4.x, written in Rust). The
-end-state languages are Zig, Go and TypeScript. Start with `docs/ROADMAP.md`.
+that we're growing back into a full Bun. Parity is measured by **Bun's own test suite** against
+locked stable Bun releases (1.3.14, then 1.4.5, …), never by chasing canary. The end-state
+languages are Zig, Go and TypeScript. **Linux only** until Linux parity; macOS/Windows come later.
+Start with `docs/ROADMAP.md` and `docs/GAP.md`.
 
 ## Ground rules
 
