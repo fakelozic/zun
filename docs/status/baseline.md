@@ -3,6 +3,26 @@
 Date: 2026-11-26. Built from `bootstrap` (cruller `f7002b1` merged, with its two "zig 17"
 commits reverted). How to build: `docs/build.md`.
 
+## Update 2026-11-26: Phase 2 Part A cleanup (still Zig 0.16)
+
+- **Static `import` crash fixed.** `src/bundler/transpiler.zig` sets
+  `opts.macro_context = &transpiler.macro_context.?;` again (plus upstream's
+  `javascript_object = this_parse.macro_js_ctx` line). Cruller's macro support is a stub
+  (`js_parser.zig` `Macro.MacroContext` only has `getRemap` → `null` and `call` → no-op), so the
+  pointer just has to be valid. Regression test: `test-bzrt-esm-import.js` (static `import` of
+  `node:assert`, `node:path` and a local `.ts` fixture in `test/js/node/test/fixtures/bzrt/`).
+- **QuickJS/V8 removed from `src/rt`** (group B below): `quickjs_engine`, `qjs_api`, `v8_engine`, `v8_api`,
+  their tests, `tests.zig`, `ssr_run.zig`, the top-level `ssr-run/` folder, the `.quickjs`/`.v8` arms of
+  `engine_selector.zig`, the `bun.rt.quickjs_engine`/`v8_engine` re-exports, and the `rt-test`, `ssr-run`,
+  `ssr-install` steps plus their `qjs`/`v8` helpers in `build.zig`. All of it is kept on `parked/rt-engines`.
+  Group A (the JSC path) is untouched.
+- Rebuilt debug on 0.16 (green, incremental) and **6/6 tests pass** (the five below + `test-bzrt-esm-import.js`).
+- **New bug found (not fixed):** with a *relative* entry path, relative imports resolve against a relative
+  directory and fail: `bun-debug test/js/.../test-bzrt-esm-import.js` → `Cannot find module
+  '../fixtures/bzrt/esm-lib.ts' from 'test/js/node/test/parallel/[eval]'`. With an absolute path (what the test
+  runner passes) or from inside the file's directory it works. The entry is loaded as an eval script
+  (`bun_js.runSourceWithHook`) and its dirname is not made absolute. Belongs with the CLI restore (Phase 4).
+
 ## Build
 
 | Item | Result |
@@ -26,6 +46,7 @@ node scripts/runner.node.mjs --quiet --exec-path $PWD/build/debug/bun-debug js/n
 | `test-path-dirname.js` | ✅ pass |
 | `test-path-extname.js` | ✅ pass |
 | `test-path-join.js` | ✅ pass |
+| `test-bzrt-esm-import.js` (added in Phase 2 Part A) | ✅ pass |
 
 **The leak-check trap.** Without a symbolizer the smoke test fails every time (5/5) with:
 
@@ -58,8 +79,8 @@ All run as `BUN_DEBUG_QUIET_LOGS=1 build/debug/bun-debug <file>`.
 | `.js` entry, `require("./lib.ts")` | ✅ `cjs->ts 3` |
 | `.ts` entry, `await import("./lib.ts")` | ✅ `ts dyn->ts 3` |
 | `.js` entry, `await import("./libj.js")` | ✅ |
-| **any entry with a static `import`** (`.js`, `.mjs`, `.ts`; local file or `node:path`) | ❌ **crash** |
-| `await import("./mid.ts")` where `mid.ts` itself has a static `import` | ❌ same crash |
+| **any entry with a static `import`** (`.js`, `.mjs`, `.ts`; local file or `node:path`) | ❌ **crash** (✅ fixed in Part A) |
+| `await import("./mid.ts")` where `mid.ts` itself has a static `import` | ❌ same crash (✅ fixed in Part A) |
 
 ### Answer: does running `.ts` directly work?
 
@@ -83,7 +104,7 @@ Cause: `src/bundler/transpiler.zig:932` sets `opts.macro_context = undefined;`. 
 calls `p.options.macro_context.getRemap(...)` (`P.zig:2777`) for every import. `0xaa…` is how Zig
 fills `undefined` memory in debug builds. Upstream Bun 1.3.14 has
 `opts.macro_context = &transpiler.macro_context.?;` there; cruller changed it in its "0 errors"
-commit (`3d5c916`). The fix is probably that one line. **Not fixed in Phase 1** so the baseline stays
+commit (`3d5c916`). The fix is that one line (done in Phase 2 Part A, see the top). **Not fixed in Phase 1** so the baseline stays
 "cruller as-is". In cruller's release build `undefined` isn't filled with `0xaa`, so ESM may *happen*
 to work there, which explains why `problem.md` reports ESM entrypoints as working. It's still undefined behaviour.
 
