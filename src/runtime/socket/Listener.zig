@@ -894,21 +894,15 @@ pub fn getsockname(this: *Listener, globalThis: *jsc.JSGlobalObject, callFrame: 
     }
     const socket = this.listener.uws;
 
-    var buf: [64]u8 = @splat(0);
-    var text_buf: [512]u8 = undefined;
-    const address_bytes: []const u8 = socket.getLocalAddress(&buf) catch return .js_undefined;
-    const address_zig: bun.compat.NetAddress = switch (address_bytes.len) {
-        4 => bun.compat.NetAddress.initIp4(address_bytes[0..4].*, 0),
-        16 => bun.compat.NetAddress.initIp6(address_bytes[0..16].*, 0, 0, 0),
-        else => return .js_undefined,
-    };
-    const family_js = switch (address_bytes.len) {
-        4 => globalThis.commonStrings().IPv4(),
-        16 => globalThis.commonStrings().IPv6(),
-        else => return .js_undefined,
-    };
-    const address_js = ZigString.init(bun.fmt.formatIp(address_zig, &text_buf) catch unreachable).toJS(globalThis);
-    const port_js: JSValue = .jsNumber(socket.getLocalPort());
+    const address = bun.compat.NetAddress.fromSocket(socket.fd().native(), .local) orelse return .js_undefined;
+    const family_js = if (address.any.family == std.posix.AF.INET6)
+        globalThis.commonStrings().IPv6()
+    else
+        globalThis.commonStrings().IPv4();
+    var text_buf: [64]u8 = undefined;
+    const text = bun.fmt.formatScopedIp(address, &text_buf) catch return .js_undefined;
+    const address_js = ZigString.init(text).toJS(globalThis);
+    const port_js: JSValue = .jsNumber(address.getPort());
 
     out.put(globalThis, bun.String.static("family"), family_js);
     out.put(globalThis, bun.String.static("address"), address_js);

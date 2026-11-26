@@ -3,6 +3,15 @@
 Things we learned the hard way while working on zun. Add newest first, with a date.
 Keep each entry short: what happened, why, what to do instead.
 
+## 2026-11-27 IPv6 presentation in `std.Io.net`
+
+- On 0.16.0 and 0.17.1, `Ip6Address.format` compresses the longest zero run and renders IPv4-mapped addresses
+  with a dotted tail. It includes brackets and port and omits the scope. The 0.17.1 formatter also uses a dotted
+  tail for `64:ff9b::/96`, where Node uses hex. [Formatting probe](probes/ipv6-format/format.zig).
+- On Linux with either release, `Ip6Address.formatResolved(std.testing.io, &writer)` on an address resolved
+  from `fe80::1%lo` panics in `Io.Threaded.netInterfaceName`. Formatting `Ip6Address.Unresolved` with a supplied
+  interface name works for that address and avoids the lookup. [TQ-9 RCA](../rca/TQ-9-ipv6-format.md).
+
 ## 2026-11-26: Phase 3 (become zun)
 
 - **`return` inside `comptime { }` fails in a runtime-called fn.** A helper that turned `"BUN_X"` into

@@ -891,21 +891,13 @@ pub fn NewSocket(comptime ssl: bool) type {
         }
 
         pub fn getLocalAddress(this: *This, globalThis: *jsc.JSGlobalObject) JSValue {
-            if (this.socket.isDetached()) {
-                return .js_undefined;
-            }
-
-            var buf: [64]u8 = @splat(0);
-            var text_buf: [512]u8 = undefined;
-
-            const address_bytes: []const u8 = this.socket.localAddress(&buf) orelse return .js_undefined;
-            const address: bun.compat.NetAddress = switch (address_bytes.len) {
-                4 => bun.compat.NetAddress.initIp4(address_bytes[0..4].*, 0),
-                16 => bun.compat.NetAddress.initIp6(address_bytes[0..16].*, 0, 0, 0),
+            const socket = switch (this.socket.socket) {
+                .connected => |socket| socket,
                 else => return .js_undefined,
             };
-
-            const text = bun.fmt.formatIp(address, &text_buf) catch unreachable;
+            const address = bun.compat.NetAddress.fromSocket(socket.getFd().native(), .local) orelse return .js_undefined;
+            var text_buf: [64]u8 = undefined;
+            const text = bun.fmt.formatScopedIp(address, &text_buf) catch return .js_undefined;
             return ZigString.init(text).toJS(globalThis);
         }
 
@@ -932,21 +924,13 @@ pub fn NewSocket(comptime ssl: bool) type {
         }
 
         pub fn getRemoteAddress(this: *This, globalThis: *jsc.JSGlobalObject) bun.JSError!JSValue {
-            if (this.socket.isDetached()) {
-                return .js_undefined;
-            }
-
-            var buf: [64]u8 = @splat(0);
-            var text_buf: [512]u8 = undefined;
-
-            const address_bytes: []const u8 = this.socket.remoteAddress(&buf) orelse return .js_undefined;
-            const address: bun.compat.NetAddress = switch (address_bytes.len) {
-                4 => bun.compat.NetAddress.initIp4(address_bytes[0..4].*, 0),
-                16 => bun.compat.NetAddress.initIp6(address_bytes[0..16].*, 0, 0, 0),
+            const socket = switch (this.socket.socket) {
+                .connected => |socket| socket,
                 else => return .js_undefined,
             };
-
-            const text = bun.fmt.formatIp(address, &text_buf) catch unreachable;
+            const address = bun.compat.NetAddress.fromSocket(socket.getFd().native(), .peer) orelse return .js_undefined;
+            var text_buf: [64]u8 = undefined;
+            const text = bun.fmt.formatScopedIp(address, &text_buf) catch return .js_undefined;
             return bun.String.createUTF8ForJS(globalThis, text);
         }
 

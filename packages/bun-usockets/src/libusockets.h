@@ -167,6 +167,7 @@ int us_udp_packet_buffer_local_ip(struct us_udp_packet_buffer_t *buf, int index,
 
 /* Get the bound port in host byte order */
 int us_udp_socket_bound_port(struct us_udp_socket_t *s);
+LIBUS_SOCKET_DESCRIPTOR us_udp_socket_get_fd(struct us_udp_socket_t *s);
 
 /* Peeks peer addr (sockaddr) of received packet */
 char *us_udp_packet_buffer_peer(struct us_udp_packet_buffer_t *buf, int index);

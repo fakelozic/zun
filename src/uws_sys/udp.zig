@@ -23,12 +23,8 @@ pub const Socket = opaque {
         return us_udp_socket_bound_port(this);
     }
 
-    pub fn boundIp(this: *udp.Socket, buf: [*c]u8, length: *i32) void {
-        return us_udp_socket_bound_ip(this, buf, length);
-    }
-
-    pub fn remoteIp(this: *udp.Socket, buf: [*c]u8, length: *i32) void {
-        return us_udp_socket_remote_ip(this, buf, length);
+    pub fn fd(this: *udp.Socket) bun.FD {
+        return .fromNative(us_udp_socket_get_fd(this));
     }
 
     pub fn close(this: *udp.Socket) void {
@@ -78,8 +74,7 @@ pub const Socket = opaque {
     extern fn us_udp_socket_user(socket: *udp.Socket) ?*anyopaque;
     extern fn us_udp_socket_bind(socket: *udp.Socket, hostname: [*c]const u8, port: c_uint) c_int;
     extern fn us_udp_socket_bound_port(socket: *udp.Socket) c_int;
-    extern fn us_udp_socket_bound_ip(socket: *udp.Socket, buf: [*c]u8, length: [*c]i32) void;
-    extern fn us_udp_socket_remote_ip(socket: *udp.Socket, buf: [*c]u8, length: [*c]i32) void;
+    extern fn us_udp_socket_get_fd(socket: *udp.Socket) bun.uws.LIBUS_SOCKET_DESCRIPTOR;
     extern fn us_udp_socket_close(socket: *udp.Socket) void;
     extern fn us_udp_socket_set_broadcast(socket: *udp.Socket, enabled: c_int) c_int;
     extern fn us_udp_socket_set_ttl_unicast(socket: *udp.Socket, ttl: c_int) c_int;
