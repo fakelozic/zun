@@ -232,8 +232,8 @@ pub const RunCommand = struct {
 
         for (passthrough) |part| {
             try copy_script.append(' ');
-            if (bun.shell.needsEscapeUtf8AsciiLatin1(part)) {
-                try bun.shell.escape8Bit(part, &copy_script, true);
+            if (ShellEscape.needsEscapeUtf8AsciiLatin1(part)) {
+                try ShellEscape.escape8Bit(part, &copy_script, true);
             } else {
                 try copy_script.appendSlice(part);
             }
@@ -247,6 +247,8 @@ pub const RunCommand = struct {
         }
 
         if (!use_system_shell) {
+            // zun-gate(shell): `--shell=bun` / `run.shell = "bun"` need src/shell (item 6).
+            if (comptime !bun.restore_flags.shell) bun.restore_flags.cliUnavailable("--shell=bun");
             const mini = bun.jsc.MiniEventLoop.initGlobal(env, cwd);
             const code = bun.shell.Interpreter.initAndRunFromSource(ctx, mini, name, copy_script.items, cwd) catch |err| {
                 if (!silent) {
@@ -479,7 +481,7 @@ pub const RunCommand = struct {
                     if (comptime Environment.isPosix) {
                         switch (bun.sys.stat(executable[0.. :0])) {
                             .result => |stat| {
-                                if (bun.S.ISDIR(stat.mode)) {
+                                if (bun.S.ISDIR(@intCast(stat.mode))) {
                                     Output.prettyErrorln("<r><red>error<r>: Failed to run directory \"<b>{s}<r>\"\n", .{basenameOrBun(executable)});
                                     break :print_error;
                                 }
@@ -610,9 +612,9 @@ pub const RunCommand = struct {
         .mac => "/private/tmp",
         else => if (Environment.isAndroid) "/data/local/tmp" else "/tmp",
     } ++ if (!Environment.isDebug)
-        "/bun-node" ++ if (Environment.git_sha_short.len > 0) "-" ++ Environment.git_sha_short else ""
+        "/zun-node" ++ if (Environment.git_sha_short.len > 0) "-" ++ Environment.git_sha_short else ""
     else
-        "/bun-node-debug";
+        "/zun-node-debug"; // zun: own temp dir, never Bun's (AGENTS.md rule 4)
 
     pub fn bunNodeFileUtf8(allocator: std.mem.Allocator) ![:0]const u8 {
         if (!Environment.isWindows) return bun_node_dir;
@@ -643,7 +645,7 @@ pub const RunCommand = struct {
     pub fn createFakeTemporaryNodeExecutable(
         PATH: *std.array_list.Managed(u8),
         optional_bun_path: *string,
-    ) (OOM || std.fs.SelfExePathError)!void {
+    ) !void { // zun: std.fs.SelfExePathError is gone in 0.17; errors come from bun.selfExePath
         // If we are already running as "node", the path should exist
         if (CLI.pretend_to_be_node) return;
 
@@ -669,23 +671,26 @@ pub const RunCommand = struct {
             }
 
             if (Environment.isDebug) {
-                std.fs.deleteTreeAbsolute(bun_node_dir) catch {};
+                std.Io.Dir.cwd().deleteTree(bun.compat.io(), bun_node_dir) catch {};
             }
             const paths = .{ bun_node_dir ++ "/node", bun_node_dir ++ "/bun" };
             inline for (paths) |path| {
                 var retried = false;
                 while (true) {
                     inner: {
-                        std.posix.symlinkZ(argv0, path) catch |err| {
-                            if (err == error.PathAlreadyExists) break :inner;
-                            if (retried)
-                                return;
+                        switch (bun.sys.symlink(bun.sliceTo(argv0, 0), path)) {
+                            .result => {},
+                            .err => |err| {
+                                if (err.getErrno() == .EXIST) break :inner;
+                                if (retried)
+                                    return;
 
-                            std.fs.makeDirAbsoluteZ(bun_node_dir) catch {};
+                                _ = bun.sys.mkdir(bun_node_dir, 0o755);
 
-                            retried = true;
-                            continue;
-                        };
+                                retried = true;
+                                continue;
+                            },
+                        }
                     }
                     break;
                 }
@@ -1722,13 +1727,13 @@ pub const RunCommand = struct {
             var list = std.Io.Writer.Allocating.init(stack_fallback.get());
             errdefer list.deinit();
 
-            var file_reader = std.fs.File.stdin().readerStreaming(&.{});
+            var file_reader = std.Io.File.stdin().readerStreaming(bun.compat.io(), &.{});
             _ = file_reader.interface.streamRemaining(&list.writer) catch return false;
             ctx.runtime_options.eval.script = list.written();
 
             const trigger = bun.pathLiteral("/[stdin]");
             var entry_point_buf: [bun.MAX_PATH_BYTES + trigger.len]u8 = undefined;
-            const cwd = try std.posix.getcwd(&entry_point_buf);
+            const cwd = try bun.getcwd(&entry_point_buf);
             @memcpy(entry_point_buf[cwd.len..][0..trigger.len], trigger);
             const entry_path = entry_point_buf[0 .. cwd.len + trigger.len];
 
@@ -1920,7 +1925,8 @@ pub const RunCommand = struct {
 
         if (ctx.filters.len == 0 and !ctx.workspaces and CLI.Cli.cmd != null and CLI.Cli.cmd.? == .AutoCommand) {
             if (bun.strings.eqlComptime(target_name, "feedback")) {
-                try @"bun feedback"(ctx);
+                // zun: `bun feedback` posts to Oven's service; off by policy (AGENTS.md rule 6).
+                if (comptime bun.restore_flags.oven_services) try @"bun feedback"(ctx) else bun.restore_flags.cliUnavailable("zun feedback");
             }
         }
 
@@ -1952,7 +1958,7 @@ pub const RunCommand = struct {
         if (ctx.runtime_options.eval.script.len > 0) {
             const trigger = bun.pathLiteral("/[eval]");
             var entry_point_buf: [bun.MAX_PATH_BYTES + trigger.len]u8 = undefined;
-            const cwd = try std.posix.getcwd(&entry_point_buf);
+            const cwd = try bun.getcwd(&entry_point_buf);
             @memcpy(entry_point_buf[cwd.len..][0..trigger.len], trigger);
             try Run.boot(ctx, entry_point_buf[0 .. cwd.len + trigger.len], null);
             return;
@@ -1995,7 +2001,7 @@ pub const RunCommand = struct {
     fn @"bun feedback"(ctx: Command.Context) !noreturn {
         const trigger = bun.pathLiteral("/[eval]");
         var entry_point_buf: [bun.MAX_PATH_BYTES + trigger.len]u8 = undefined;
-        const cwd = try std.posix.getcwd(&entry_point_buf);
+        const cwd = try bun.getcwd(&entry_point_buf);
         @memcpy(entry_point_buf[cwd.len..][0..trigger.len], trigger);
         ctx.runtime_options.eval.script = if (bun.Environment.codegen_embed)
             @embedFile("eval/feedback.ts")
@@ -2007,7 +2013,8 @@ pub const RunCommand = struct {
 };
 
 pub const BunXFastPath = struct {
-    const shim_impl = @import("../install/windows-shim/bun_shim_impl.zig");
+    // zun: Windows-only (bunx shim fast path); src/install/windows-shim comes back with Windows support.
+    const shim_impl = @compileError("zun-gate(windows): src/install/windows-shim is not in the tree");
     const debug = Output.scoped(.BunXFastPath, .visible);
 
     var direct_launch_buffer: bun.WPathBuffer = undefined;
@@ -2185,6 +2192,8 @@ const PackageJSON = @import("../resolver/package_json.zig").PackageJSON;
 const which = @import("../which/which.zig").which;
 const yarn_commands = @import("./list-of-yarn-commands.zig").all_yarn_commands;
 const windows = std.os.windows;
+
+const ShellEscape = @import("./shell_escape.zig"); // zun: until src/shell is restored
 
 const bun = @import("bun");
 const Environment = bun.Environment;

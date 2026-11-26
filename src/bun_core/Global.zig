@@ -159,7 +159,8 @@ pub fn raiseIgnoringPanicHandler(sig: bun.SignalCode) noreturn {
     }
 
     // kill self
-    _ = std.c.raise(@intFromEnum(sig));
+    // zun: 0.17 `std.c.raise` takes `std.posix.SIG` (an enum), not an int.
+    _ = std.c.raise(@enumFromInt(@intFromEnum(sig)));
     std.c.abort();
 }
 

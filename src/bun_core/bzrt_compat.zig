@@ -155,6 +155,9 @@ pub fn ArrayHashMapManaged(comptime K: type, comptime V: type, comptime Context:
         pub fn putAssumeCapacity(self: *Self, key: K, value: V) void {
             self.unmanaged.putAssumeCapacity(key, value);
         }
+        pub fn putAssumeCapacityNoClobber(self: *Self, key: K, value: V) void {
+            self.unmanaged.putAssumeCapacityNoClobber(key, value);
+        }
         pub fn sort(self: *Self, context: anytype) void {
             self.unmanaged.sort(context);
         }

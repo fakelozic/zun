@@ -306,32 +306,40 @@ fn loadBunfig(allocator: std.mem.Allocator, auto_loaded: bool, config_path: [:0]
     }
     ctx.log.level = logger.Log.Level.warn;
     ctx.debug.loaded_bunfig = true;
+    // zun: `ZUN_DEBUG_ZUN=1` (debug builds) names the config file actually loaded
+    // (test-zun-identity.js checks the zunfig.toml > bunfig.toml order with it).
+    zun_log("loading config file: {s}", .{config_path});
     try Bunfig.parse(allocator, &source, ctx, cmd);
 }
 
+/// zun: `$XDG_CONFIG_HOME` (else `$HOME`) `/.zunfig.toml`, else `.bunfig.toml` there
+/// (docs/identity.md). Upstream returned the `.bunfig.toml` path even when it was missing and
+/// let the auto-loaded read fail silently; returning null for a missing file is equivalent.
 fn getHomeConfigPath(buf: *bun.PathBuffer) ?[:0]const u8 {
-    var paths = [_]string{".bunfig.toml"};
+    return bun.zun.findGlobalConfig(buf);
+}
 
-    if (bun.env_var.XDG_CONFIG_HOME.get()) |data_dir| {
-        return resolve_path.joinAbsStringBufZ(data_dir, buf, &paths, .auto);
-    }
-
-    if (bun.env_var.HOME.get()) |home_dir| {
-        return resolve_path.joinAbsStringBufZ(home_dir, buf, &paths, .auto);
-    }
-
-    return null;
+/// zun: the auto-loaded per-project config, `<cwd>/zunfig.toml`, else `<cwd>/bunfig.toml`
+/// (docs/identity.md). Replaces upstream's literal `"bunfig.toml"` for auto-loading only; an
+/// explicit `--config <path>` is used as given and is an error if it can't be read.
+pub fn loadLocalConfigAuto(allocator: std.mem.Allocator, ctx: Command.Context, comptime cmd: Command.Tag) !void {
+    var cwd_buf: bun.PathBuffer = undefined;
+    const cwd = bun.getcwd(&cwd_buf) catch return;
+    var config_buf: bun.PathBuffer = undefined;
+    const path = bun.zun.findLocalConfig(cwd, &config_buf) orelse return;
+    try loadConfigPath(allocator, true, path, ctx, cmd);
 }
 pub fn loadConfig(allocator: std.mem.Allocator, user_config_path_: ?string, ctx: Command.Context, comptime cmd: Command.Tag) OOM!void {
     // If running as a standalone executable with autoloadBunfig disabled, skip config loading
     // unless an explicit config path was provided via --config
-    if (user_config_path_ == null) {
+    // zun-gate(standalone): `--compile` executables come back with src/standalone_graph (item 10).
+    if (comptime bun.restore_flags.standalone) if (user_config_path_ == null) {
         if (bun.StandaloneModuleGraph.get()) |graph| {
             if (graph.flags.disable_autoload_bunfig) {
                 return;
             }
         }
-    }
+    };
 
     var config_buf: bun.PathBuffer = undefined;
     if (comptime cmd.readGlobalConfig()) {
@@ -362,7 +370,13 @@ pub fn loadConfig(allocator: std.mem.Allocator, user_config_path_: ?string, ctx:
                 // "bun file.js"
                 ctx.positionals.len > 0 and options.defaultLoaders.has(std.fs.path.extension(ctx.positionals[0]))))))
     {
-        config_path_ = "bunfig.toml";
+        // zun: `zunfig.toml`, else `bunfig.toml`; nothing to auto-load if neither exists.
+        var cwd_buf: bun.PathBuffer = undefined;
+        const cwd = bun.getcwd(&cwd_buf) catch return;
+        var local_buf: bun.PathBuffer = undefined;
+        const found = bun.zun.findLocalConfig(cwd, &local_buf) orelse return;
+        // `found` points into `local_buf`, which ends with this block: keep a static name.
+        config_path_ = if (strings.eqlComptime(std.fs.path.basename(found), "zunfig.toml")) "zunfig.toml" else "bunfig.toml";
         auto_loaded = true;
     }
 
@@ -1718,6 +1732,8 @@ const string = []const u8;
 
 const builtin = @import("builtin");
 const std = @import("std");
+
+const zun_log = bun.Output.scoped(.zun, .hidden);
 
 const bun = @import("bun");
 const Bunfig = bun.Bunfig;

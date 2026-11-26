@@ -59,8 +59,8 @@ pub const ProcessHandle = struct {
     } = null,
     options: bun.spawn.SpawnOptions,
 
-    start_time: ?std.time.Instant = null,
-    end_time: ?std.time.Instant = null,
+    start_time: ?i128 = null,
+    end_time: ?i128 = null,
 
     remaining_dependencies: usize = 0,
     /// Dependents within the same script group (pre->main->post chain).
@@ -80,7 +80,7 @@ pub const ProcessHandle = struct {
             null,
         };
 
-        this.start_time = std.time.Instant.now() catch null;
+        this.start_time = bun.compat.nanoTimestamp();
         var spawned: bun.spawn.process.SpawnProcessResult = brk: {
             var arena = std.heap.ArenaAllocator.init(bun.default_allocator);
             defer arena.deinit();
@@ -130,7 +130,7 @@ pub const ProcessHandle = struct {
 
     pub fn onProcessExit(this: *This, proc: *bun.spawn.Process, status: bun.spawn.Status, _: *const bun.spawn.Rusage) void {
         this.process.?.status = status;
-        this.end_time = std.time.Instant.now() catch null;
+        this.end_time = bun.compat.nanoTimestamp();
         _ = proc;
         this.state.processExit(this) catch {};
     }
@@ -245,7 +245,8 @@ const State = struct {
                     try writer.print("Exited with code {d}\n", .{exited.code});
                 } else {
                     if (handle.start_time != null and handle.end_time != null) {
-                        const duration = handle.end_time.?.since(handle.start_time.?);
+                        // zun: std.time.Instant is gone in 0.17; monotonic ns from bun.compat (was Instant.since).
+                        const duration: u64 = @intCast(@max(handle.end_time.? - handle.start_time.?, 0));
                         const ms = @as(f64, @floatFromInt(duration)) / 1_000_000.0;
                         if (ms > 1000.0) {
                             try writer.print("Done in {d:.2}s\n", .{ms / 1000.0});
@@ -326,7 +327,7 @@ const State = struct {
         for (this.handles) |*handle| {
             if (handle.process) |*proc| {
                 if (proc.status == .running) {
-                    _ = proc.ptr.kill(std.posix.SIG.INT);
+                    _ = proc.ptr.kill(@intFromEnum(std.posix.SIG.INT));
                 }
             }
         }
@@ -351,7 +352,8 @@ const State = struct {
 const AbortHandler = struct {
     var should_abort = false;
 
-    fn posixSignalHandler(sig: i32, info: *const std.posix.siginfo_t, _: ?*const anyopaque) callconv(.c) void {
+    // zun: 0.17 types the signal as `std.posix.SIG` (an enum) and the context as `?*anyopaque`.
+    fn posixSignalHandler(sig: std.posix.SIG, info: *const std.posix.siginfo_t, _: ?*anyopaque) callconv(.c) void {
         _ = sig;
         _ = info;
         should_abort = true;
@@ -372,7 +374,7 @@ const AbortHandler = struct {
                 .mask = bun.sys.sigemptyset(),
                 .flags = std.posix.SA.SIGINFO | std.posix.SA.RESTART | std.posix.SA.RESETHAND,
             };
-            bun.sys.sigaction(std.posix.SIG.INT, &action, null);
+            bun.sys.sigaction(@intFromEnum(std.posix.SIG.INT), &action, null);
         } else {
             const res = bun.c.SetConsoleCtrlHandler(windowsCtrlHandler, std.os.windows.TRUE);
             if (res == 0) {

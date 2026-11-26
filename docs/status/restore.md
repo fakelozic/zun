@@ -17,7 +17,7 @@ grep -rn bzrt src --include='*.zig' --include='*.cpp' --include='*.h' --include=
 |---|--------|--------|-------|
 | 1 | Prep (this ledger, recipe, gates) | ✅ 2026-11-26 | `scripts/restore-module.ts`, `src/bun_core/restore_flags.zig` |
 | 2 | `md` (`Bun.markdown`, `.md` loader) | ✅ 2026-11-26 | § md below |
-| 3 | `cli` core | ⏳ next | |
+| 3 | `cli` core | ⏳ (a) done 2026-11-26 | § cli below; (b) `--help` identity, (c) init/repl/completions open |
 | 4 | `test_runner` | | |
 | 5 | `js_parser_jsc` / `Bun.Transpiler` | | |
 | 6 | `shell` | | |
@@ -93,25 +93,41 @@ Line numbers are at the commit that last touched this table. "re-enable" = un-co
 
 ### cli (item 3)
 
+Checkpoint (a) landed 2026-11-26 (`scripts/restore/cli.files`, `cli.lock`): `cli.zig`, `Arguments.zig`, `bunfig.zig`,
+`run_command.zig`, `filter_run.zig`, `multi_run.zig`, `filter_arg.zig`, `colon_list_type.zig`, `shell_completions.zig`,
+`list-of-yarn-commands.zig`, `ci_info.zig`, `exec_command.zig`, `open.zig`. `main.zig` calls `bun.cli.Cli.start` again;
+`bun.js.zig` aliases the real `cli.Command` and loads the config in `Run.boot`.
+
+Re-enabled: `src/bun.zig` `ci`, `Bunfig`, `cli` (the `cli_compat` stand-in is gone; `crash_handler` uses `bun.cli.Cli`),
+`RunCommand`, `getUseSystemCA` (reads `Arguments.Bun__Node__UseSystemCA`); `node_process.zig` process title and the
+`execArgv` value-taking-flag map (was empty, so `execArgv` split flags wrongly); `process.zig` `ProcessHandle`,
+`MultiRunProcessHandle`; the four `Bun__Node__*` globals moved from `vm_exports_stub.zig` back to `Arguments.zig`.
+
+zun changes to upstream code (marked `zun:`):
+- Config lookup: `Arguments.loadConfig` and `Run.boot` use `bun.zun.findLocalConfig`/`findGlobalConfig`
+  (`zunfig.toml`, else `bunfig.toml`); `--config <path>` is used as given and a missing file is an error (exit 1).
+- `bun-node` temp dir is `/tmp/zun-node[-<sha>|-debug]`. `--version`/`--revision` print `bun.zun.version_line`/`revision_line`.
+- `src/cli/shell_escape.zig`: upstream's `escape8Bit`/`needsEscapeUtf8AsciiLatin1`, copied verbatim from `src/shell`
+  for `zun run <script> -- args`; delete it when shell lands.
+- Gates (`cliUnavailable`): every command whose file isn't restored (`install`, `add`, `pm`, `x`, `build`, `test`, `create`,
+  `init`, `repl`, `completions`, `patch`, …), `.sh` entry points and `--shell=bun` (shell), `zun ./bun.lockb` (install),
+  `--compile` executables (standalone), and by policy `upgrade`, `discord`, `feedback` (`restore_flags.oven_services`).
+  New flags: `cli_init`, `cli_repl`, `cli_completions`, `oven_services`.
+- bunfig `[install]` is not read (no consumer exists before item 8), and `PackageJSON.parse` skips dependencies (same reason).
+
+Still open for item 3:
+
 | Where | What |
 |-------|------|
-| `src/main.zig:63` | minimal launcher instead of `bun.cli.Cli.start` |
-| `src/bun.js.zig:34,139` | bunfig loading cut |
-| `src/bun.js.zig:542,713` | minimal production loader; CLI option types kept locally |
-| `src/bun.zig:179` | `ci` (`cli/ci_info.zig`) |
-| `src/bun.zig:742` | `Bunfig` |
-| `src/bun.zig:1217-1218` | `cli` + crash-handler stand-in struct |
-| `src/bun.zig:1230` | `RunCommand` |
-| `src/bun.zig:1495` | `upgrade_command.Version` |
-| `src/bun.zig:3847-3848` | `Arguments` use (returns `false`) |
+| `src/cli/cli.zig` help text | still says `bun` / links to bun.com (checkpoint b) |
+| `src/cli/{init_command,repl_command,repl,install_completions_command}.zig`, `completions/` | checkpoint (c) |
+| `src/bun.zig:1495` | `upgrade_command.Version` (policy: keep `upgrade` off; restore only `Version` if something needs it) |
 | `src/jsc/ConsoleObject.zig:172,3695,3800` | console depth from CLI |
 | `src/jsc/VirtualMachine.zig:56` | `HotReload` from `options_types/Context.zig` |
-| `src/jsc/rare_data.zig:936` | `EditorContext = struct {}` (`cli/open.zig`) |
-| `src/runtime/api/BunObject.zig:527,1936` | `Bun.openInEditor` |
-| `src/runtime/node/node_process.zig:2-38` | process title kept locally |
-| `src/runtime/api/bun/process.zig:132,2909,2910` | `ProcessHandle`, `MultiRunProcessHandle` |
-| `src/jsc/vm_exports_stub.zig:14-16,22` | `Bun__Node__ProcessNoDeprecation`, `…ThrowDeprecation`, `…UseSystemCA`, `Bun__githubURL` (real ones live in `cli/Arguments.zig` / `upgrade_command.zig`) |
-| `src/jsc/vm_exports_stub.zig:40` | `Bun__Node__ZeroFillBuffers`: stub is a *function* but C++ reads an `extern bool`; upstream is `export var … = false` in `cli/Arguments.zig:1709` (`docs/security/known-issues.md` RT-1) |
+| `src/jsc/rare_data.zig:936`, `src/runtime/api/BunObject.zig:527,1936` | `EditorContext` / `Bun.openInEditor` (`cli/open.zig` is now in the tree) |
+| `src/jsc/vm_exports_stub.zig` | `Bun__githubURL` (real one is in `upgrade_command.zig`) |
+| `src/bun.js.zig` | `runEntryFile`/`runSource`/`findLaunchConfig` (old launcher, now unused by `main.zig`; `src/rt` still names them) |
+| `src/runtime/server/server.zig:1747` | `!Command.get().debug.silent` on the idle-timeout warning (TQ-2 sibling) |
 
 ### test_runner (item 4)
 

@@ -77,9 +77,9 @@ This restores upstream's semantics (print only together with the breakpoint, onl
 filtering the line out of test output. Verified: with `BUN_DEBUG_BREAK_ON_RESOLVE=1` the line prints and the process
 traps (exit 133); without it nothing prints.
 
-**Follow-up (R2):** when Phase 4 item 3 restores `bun.cli.debug_flags`, switch the gate back to upstream's
-`bun.cli.debug_flags.hasResolveBreakpoint(import_path)` (per-path, from `--breakpoint-resolve`) and retire
-`BUN_DEBUG_BREAK_ON_RESOLVE`, or keep it as an extra opt-in. Tracked in `docs/status/triage.md` (TQ-2 row).
+**Follow-up (R2), done in the CLI-restore commit:** with `bun.cli.debug_flags` back, the gate is upstream's
+`bun.cli.debug_flags.hasResolveBreakpoint(import_path)` (per-path, from `--breakpoint-resolve`), with
+`BUN_DEBUG_BREAK_ON_RESOLVE` kept as an extra opt-in for every resolve.
 
 ## Regression test
 

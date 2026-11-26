@@ -899,7 +899,9 @@ pub const PackageJSON = struct {
             }
         }
 
-        if (comptime include_dependencies == .main or include_dependencies == .local) {
+        // zun-gate(install): dependency parsing feeds the package manager / lockfile (src/install),
+        // which is not restored yet; nothing reads `dependencies` until then (item 8).
+        if (comptime bun.restore_flags.install and (include_dependencies == .main or include_dependencies == .local)) {
             update_dependencies: {
                 if (package_id) |pkg| {
                     package_json.package_manager_package_id = pkg;

@@ -3047,7 +3047,9 @@ pub const api = struct {
 
         link_workspace_packages: ?bool = null,
 
-        node_linker: ?bun.install.PackageManager.Options.NodeLinker = null,
+        // zun-gate(install): the real enum lives in src/install; until it is restored nothing can
+        // consume this field (no `zun install`, no auto-install), so bunfig.zig skips `[install]`.
+        node_linker: ?(if (bun.restore_flags.install) bun.install.PackageManager.Options.NodeLinker else noreturn) = null,
 
         global_store: ?bool = null,
 

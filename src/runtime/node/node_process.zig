@@ -1,6 +1,4 @@
 //! Process information and control APIs (`globalThis.process` / `node:process`)
-// bzrt: cli removed — process title is stored locally
-var bzrt_process_title: ?[]const u8 = null;
 comptime {
     @export(&getTitle, .{ .name = "Bun__Process__getTitle" });
     @export(&setTitle, .{ .name = "Bun__Process__setTitle" });
@@ -19,7 +17,7 @@ var title_mutex = bun.Mutex{};
 pub fn getTitle(_: *JSGlobalObject, title: *bun.String) callconv(.c) void {
     title_mutex.lock();
     defer title_mutex.unlock();
-    const str = bzrt_process_title;
+    const str = bun.cli.Bun__Node__ProcessTitle;
     title.* = bun.String.cloneUTF8(str orelse "bun");
 }
 
@@ -34,8 +32,8 @@ pub fn setTitle(globalObject: *JSGlobalObject, newvalue: *bun.String) callconv(.
         return;
     };
 
-    if (bzrt_process_title) |slice| bun.default_allocator.free(slice);
-    bzrt_process_title = new_title;
+    if (bun.cli.Bun__Node__ProcessTitle) |slice| bun.default_allocator.free(slice);
+    bun.cli.Bun__Node__ProcessTitle = new_title;
 }
 
 pub fn createArgv0(globalObject: *jsc.JSGlobalObject) callconv(.c) jsc.JSValue {
@@ -91,7 +89,28 @@ fn createExecArgv(globalObject: *jsc.JSGlobalObject) bun.JSError!jsc.JSValue {
 
         // A set of execArgv args consume an extra argument, so we do not want to
         // confuse these with script names.
-        const map = bun.ComptimeStringMap(void, .{});
+        const map = bun.ComptimeStringMap(void, comptime brk: {
+            const auto_params = bun.cli.Arguments.auto_params;
+            const KV = struct { []const u8, void };
+            var entries: [auto_params.len]KV = undefined;
+            var i = 0;
+            for (auto_params) |param| {
+                if (param.takes_value != .none) {
+                    if (param.names.long) |name| {
+                        entries[i] = .{ "--" ++ name, {} };
+                        i += 1;
+                    }
+                    if (param.names.short) |name| {
+                        entries[i] = .{ &[_]u8{ '-', name }, {} };
+                        i += 1;
+                    }
+                }
+            }
+
+            var result: [i]KV = undefined;
+            @memcpy(&result, entries[0..i]);
+            break :brk result;
+        });
 
         if (prev) |p| if (map.has(p)) {
             try args.append(bun.String.cloneUTF8(arg));

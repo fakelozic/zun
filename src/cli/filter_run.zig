@@ -35,8 +35,8 @@ pub const ProcessHandle = struct {
     } = null,
     options: bun.spawn.SpawnOptions,
 
-    start_time: ?std.time.Instant = null,
-    end_time: ?std.time.Instant = null,
+    start_time: ?i128 = null,
+    end_time: ?i128 = null,
 
     remaining_dependencies: usize = 0,
     dependents: std.array_list.Managed(*This) = std.array_list.Managed(*This).init(bun.default_allocator),
@@ -49,7 +49,7 @@ pub const ProcessHandle = struct {
 
         var argv = [_:null]?[*:0]const u8{ this.state.shell_bin, if (Environment.isPosix) "-c" else "exec", this.config.combined, null };
 
-        this.start_time = std.time.Instant.now() catch null;
+        this.start_time = bun.compat.nanoTimestamp();
         var spawned: bun.spawn.process.SpawnProcessResult = brk: {
 
             // Get the envp with the PATH configured
@@ -117,7 +117,7 @@ pub const ProcessHandle = struct {
 
     pub fn onProcessExit(this: *This, proc: *bun.spawn.Process, status: bun.spawn.Status, _: *const bun.spawn.Rusage) void {
         this.process.?.status = status;
-        this.end_time = std.time.Instant.now() catch null;
+        this.end_time = bun.compat.nanoTimestamp();
         // We just leak the process because we're going to exit anyway after all processes are done
         _ = proc;
         this.state.processExit(this) catch {};
@@ -174,7 +174,7 @@ const State = struct {
                 if (std.mem.indexOfScalar(u8, content, '\n')) |i| {
                     try handle.buffer.appendSlice(content[0 .. i + 1]);
                     content = content[i + 1 ..];
-                    try this.draw_buf.writer().print("{s} {s}: {s}", .{ handle.config.package_name, handle.config.script_name, handle.buffer.items });
+                    try bun.compat.listWriter(&this.draw_buf).print("{s} {s}: {s}", .{ handle.config.package_name, handle.config.script_name, handle.buffer.items });
                     handle.buffer.clearRetainingCapacity();
                 } else {
                     try handle.buffer.appendSlice(content);
@@ -183,7 +183,7 @@ const State = struct {
             }
             while (std.mem.indexOfScalar(u8, content, '\n')) |i| {
                 const line = content[0 .. i + 1];
-                try this.draw_buf.writer().print("{s} {s}: {s}", .{ handle.config.package_name, handle.config.script_name, line });
+                try bun.compat.listWriter(&this.draw_buf).print("{s} {s}: {s}", .{ handle.config.package_name, handle.config.script_name, line });
                 content = content[i + 1 ..];
             }
             if (content.len > 0) {
@@ -212,16 +212,16 @@ const State = struct {
             this.draw_buf.clearRetainingCapacity();
             // flush any remaining buffer
             if (handle.buffer.items.len > 0) {
-                try this.draw_buf.writer().print("{s}: {s}\n", .{ handle.config.package_name, handle.buffer.items });
+                try bun.compat.listWriter(&this.draw_buf).print("{s}: {s}\n", .{ handle.config.package_name, handle.buffer.items });
                 handle.buffer.clearRetainingCapacity();
             }
             // print exit status
             switch (handle.process.?.status) {
                 .exited => |exited| {
-                    try this.draw_buf.writer().print("{s} {s}: Exited with code {d}\n", .{ handle.config.package_name, handle.config.script_name, exited.code });
+                    try bun.compat.listWriter(&this.draw_buf).print("{s} {s}: Exited with code {d}\n", .{ handle.config.package_name, handle.config.script_name, exited.code });
                 },
                 .signaled => |signal| {
-                    try this.draw_buf.writer().print("{s} {s}: Signaled with code {s}\n", .{ handle.config.package_name, handle.config.script_name, @tagName(signal) });
+                    try bun.compat.listWriter(&this.draw_buf).print("{s} {s}: Signaled with code {s}\n", .{ handle.config.package_name, handle.config.script_name, @tagName(signal) });
                 },
                 else => {},
             }
@@ -273,9 +273,9 @@ const State = struct {
             const elide_lines = if (is_abort) null else handle.config.elide_count orelse 10;
             const e = elide(handle.buffer.items, elide_lines);
 
-            try this.draw_buf.writer().print(fmt("<b>{s}<r> {s} $ <d>{s}<r>\n"), .{ handle.config.package_name, handle.config.script_name, handle.config.script_content });
+            try bun.compat.listWriter(&this.draw_buf).print(fmt("<b>{s}<r> {s} $ <d>{s}<r>\n"), .{ handle.config.package_name, handle.config.script_name, handle.config.script_content });
             if (e.elided_count > 0) {
-                try this.draw_buf.writer().print(
+                try bun.compat.listWriter(&this.draw_buf).print(
                     fmt("<cyan>│<r> <d>[{d} lines elided]<r>\n"),
                     .{e.elided_count},
                 );
@@ -299,25 +299,26 @@ const State = struct {
                     .exited => |exited| {
                         if (exited.code == 0) {
                             if (handle.start_time != null and handle.end_time != null) {
-                                const duration = handle.end_time.?.since(handle.start_time.?);
+                                // zun: std.time.Instant is gone in 0.17; monotonic ns from bun.compat (was Instant.since).
+                        const duration: u64 = @intCast(@max(handle.end_time.? - handle.start_time.?, 0));
                                 const ms = @as(f64, @floatFromInt(duration)) / 1_000_000.0;
                                 if (ms > 1000.0) {
-                                    try this.draw_buf.writer().print(fmt("<cyan>Done in {d:.2} s<r>\n"), .{ms / 1_000.0});
+                                    try bun.compat.listWriter(&this.draw_buf).print(fmt("<cyan>Done in {d:.2} s<r>\n"), .{ms / 1_000.0});
                                 } else {
-                                    try this.draw_buf.writer().print(fmt("<cyan>Done in {d:.0} ms<r>\n"), .{ms});
+                                    try bun.compat.listWriter(&this.draw_buf).print(fmt("<cyan>Done in {d:.0} ms<r>\n"), .{ms});
                                 }
                             } else {
                                 try this.draw_buf.appendSlice(fmt("<cyan>Done<r>\n"));
                             }
                         } else {
-                            try this.draw_buf.writer().print(fmt("<red>Exited with code {d}<r>\n"), .{exited.code});
+                            try bun.compat.listWriter(&this.draw_buf).print(fmt("<red>Exited with code {d}<r>\n"), .{exited.code});
                         }
                     },
                     .signaled => |code| {
                         if (code == .SIGINT) {
-                            try this.draw_buf.writer().print(fmt("<red>Interrupted<r>\n"), .{});
+                            try bun.compat.listWriter(&this.draw_buf).print(fmt("<red>Interrupted<r>\n"), .{});
                         } else {
-                            try this.draw_buf.writer().print(fmt("<red>Signaled with code {s}<r>\n"), .{@tagName(code)});
+                            try bun.compat.listWriter(&this.draw_buf).print(fmt("<red>Signaled with code {s}<r>\n"), .{@tagName(code)});
                         }
                     },
                     .err => {
@@ -325,7 +326,7 @@ const State = struct {
                     },
                 }
             } else {
-                try this.draw_buf.writer().print(fmt("<cyan><d>Waiting for {d} other script(s)<r>\n"), .{handle.remaining_dependencies});
+                try bun.compat.listWriter(&this.draw_buf).print(fmt("<cyan><d>Waiting for {d} other script(s)<r>\n"), .{handle.remaining_dependencies});
             }
         }
         try this.draw_buf.appendSlice(Output.synchronized_end);
@@ -339,7 +340,7 @@ const State = struct {
     }
 
     fn flushDrawBuf(this: *This) void {
-        std.fs.File.stdout().writeAll(this.draw_buf.items) catch {};
+        _ = bun.sys.File.from(bun.FD.stdout()).writeAll(this.draw_buf.items);
     }
 
     pub fn abort(this: *This) void {
@@ -348,7 +349,7 @@ const State = struct {
         for (this.handles) |*handle| {
             if (handle.process) |*proc| {
                 // if we get an error here we simply ignore it
-                _ = proc.ptr.kill(std.posix.SIG.INT);
+                _ = proc.ptr.kill(@intFromEnum(std.posix.SIG.INT));
             }
         }
     }
@@ -375,7 +376,8 @@ const AbortHandler = struct {
 
     var should_abort = false;
 
-    fn posixSignalHandler(sig: i32, info: *const std.posix.siginfo_t, _: ?*const anyopaque) callconv(.c) void {
+    // zun: 0.17 types the signal as `std.posix.SIG` (an enum) and the context as `?*anyopaque`.
+    fn posixSignalHandler(sig: std.posix.SIG, info: *const std.posix.siginfo_t, _: ?*anyopaque) callconv(.c) void {
         _ = sig;
         _ = info;
         should_abort = true;
@@ -396,7 +398,7 @@ const AbortHandler = struct {
                 .mask = bun.sys.sigemptyset(),
                 .flags = std.posix.SA.SIGINFO | std.posix.SA.RESTART | std.posix.SA.RESETHAND,
             };
-            bun.sys.sigaction(std.posix.SIG.INT, &action, null);
+            bun.sys.sigaction(@intFromEnum(std.posix.SIG.INT), &action, null);
         } else {
             const res = bun.c.SetConsoleCtrlHandler(windowsCtrlHandler, std.os.windows.TRUE);
             if (res == 0) {
@@ -502,8 +504,8 @@ pub fn runScriptsWithFilter(ctx: Command.Context) !noreturn {
 
             for (ctx.passthrough) |part| {
                 try copy_script.append(' ');
-                if (bun.shell.needsEscapeUtf8AsciiLatin1(part)) {
-                    try bun.shell.escape8Bit(part, &copy_script, true);
+                if (ShellEscape.needsEscapeUtf8AsciiLatin1(part)) {
+                    try ShellEscape.escape8Bit(part, &copy_script, true);
                 } else {
                     try copy_script.appendSlice(part);
                 }
@@ -670,6 +672,8 @@ const FilterArg = @import("./filter_arg.zig");
 const std = @import("std");
 const DependencyMap = @import("../resolver/package_json.zig").DependencyMap;
 const RunCommand = @import("./run_command.zig").RunCommand;
+
+const ShellEscape = @import("./shell_escape.zig"); // zun: until src/shell is restored
 
 const bun = @import("bun");
 const Environment = bun.Environment;

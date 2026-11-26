@@ -509,7 +509,9 @@ pub const Bunfig = struct {
                 }
             }
 
-            if (comptime cmd.isNPMRelated() or cmd == .RunCommand or cmd == .AutoCommand or cmd == .TestCommand) {
+            // zun-gate(install): `[install]` only configures the package manager and auto-install,
+            // neither of which exists until src/install is restored (item 8), so it has no reader yet.
+            if (comptime bun.restore_flags.install and (cmd.isNPMRelated() or cmd == .RunCommand or cmd == .AutoCommand or cmd == .TestCommand)) {
                 if (json.getObject("install")) |install_obj| {
                     var install: *api.BunInstall = this.ctx.install orelse brk: {
                         const install = try this.allocator.create(api.BunInstall);
@@ -1291,7 +1293,7 @@ const resolver = @import("../resolver/resolver.zig");
 const std = @import("std");
 const Command = @import("./cli.zig").Command;
 const PackageJSON = @import("../resolver/package_json.zig").PackageJSON;
-const TestCommand = @import("./test_command.zig").TestCommand;
+const TestCommand = @compileError("zun-gate(test_runner): src/cli/test_command.zig is not restored yet (docs/status/restore.md)");
 const URL = @import("../url/url.zig").URL;
 
 const bun = @import("bun");

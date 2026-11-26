@@ -654,11 +654,12 @@ pub const Resolver = struct {
             bun.crash_handler.current_action = prev_action;
         };
 
-        // zun (TQ-2): upstream gates the print *and* the breakpoint on
-        // `bun.cli.debug_flags.hasResolveBreakpoint(import_path)`. Until the
-        // debug flags are restored, both share the opt-in
-        // BUN_DEBUG_BREAK_ON_RESOLVE gate, so a plain debug run prints nothing.
-        if (Environment.show_crash_trace and bun.env_var.BUN_DEBUG_BREAK_ON_RESOLVE.get()) {
+        // zun (TQ-2): the print and the breakpoint share one opt-in gate, as upstream:
+        // `--breakpoint-resolve <substr>` (debug builds), or BUN_DEBUG_BREAK_ON_RESOLVE for every
+        // resolve. A plain debug run prints nothing (docs/rca/TQ-2-resolver-debug-print-ungated.md).
+        if (Environment.show_crash_trace and (bun.cli.debug_flags.hasResolveBreakpoint(import_path) or
+            bun.env_var.BUN_DEBUG_BREAK_ON_RESOLVE.get()))
+        {
             bun.Output.debug("Resolving <green>{s}<r> from <blue>{s}<r>", .{
                 import_path,
                 source_dir,

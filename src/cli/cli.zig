@@ -10,7 +10,7 @@ pub const Cli = struct {
     pub fn startTransform(_: std.mem.Allocator, _: api.TransformOptions, _: *logger.Log) anyerror!void {}
     pub fn start(allocator: std.mem.Allocator) void {
         is_main_thread = true;
-        start_time = std.time.nanoTimestamp();
+        start_time = bun.compat.nanoTimestamp();
         log_ = logger.Log.init(allocator);
 
         var log = &log_;
@@ -64,35 +64,35 @@ pub fn invalidTarget(diag: *clap.Diagnostic, _target: []const u8) noreturn {
     std.process.exit(1);
 }
 
-pub const BuildCommand = @import("./build_command.zig").BuildCommand;
-pub const AddCommand = @import("./add_command.zig").AddCommand;
-pub const CreateCommand = @import("./create_command.zig").CreateCommand;
-pub const CreateCommandExample = @import("./create_command.zig").Example;
-pub const CreateListExamplesCommand = @import("./create_command.zig").CreateListExamplesCommand;
-pub const DiscordCommand = @import("./discord_command.zig").DiscordCommand;
-pub const InstallCommand = @import("./install_command.zig").InstallCommand;
-pub const LinkCommand = @import("./link_command.zig").LinkCommand;
-pub const UnlinkCommand = @import("./unlink_command.zig").UnlinkCommand;
-pub const InstallCompletionsCommand = @import("./install_completions_command.zig").InstallCompletionsCommand;
-pub const PackageManagerCommand = @import("./package_manager_command.zig").PackageManagerCommand;
-pub const RemoveCommand = @import("./remove_command.zig").RemoveCommand;
+pub const BuildCommand = @compileError("zun-gate(bundler): ./build_command.zig is not restored yet (docs/status/restore.md)");
+pub const AddCommand = @compileError("zun-gate(install): ./add_command.zig is not restored yet (docs/status/restore.md)");
+pub const CreateCommand = @compileError("zun-gate(install): ./create_command.zig is not restored yet (docs/status/restore.md)");
+pub const CreateCommandExample = @compileError("zun-gate(install): ./create_command.zig is not restored yet (docs/status/restore.md)");
+pub const CreateListExamplesCommand = @compileError("zun-gate(install): ./create_command.zig is not restored yet (docs/status/restore.md)");
+pub const DiscordCommand = @compileError("zun-gate(oven_services): ./discord_command.zig is not restored yet (docs/status/restore.md)");
+pub const InstallCommand = @compileError("zun-gate(install): ./install_command.zig is not restored yet (docs/status/restore.md)");
+pub const LinkCommand = @compileError("zun-gate(install): ./link_command.zig is not restored yet (docs/status/restore.md)");
+pub const UnlinkCommand = @compileError("zun-gate(install): ./unlink_command.zig is not restored yet (docs/status/restore.md)");
+pub const InstallCompletionsCommand = @compileError("zun-gate(cli_completions): ./install_completions_command.zig is not restored yet (docs/status/restore.md)");
+pub const PackageManagerCommand = @compileError("zun-gate(install): ./package_manager_command.zig is not restored yet (docs/status/restore.md)");
+pub const RemoveCommand = @compileError("zun-gate(install): ./remove_command.zig is not restored yet (docs/status/restore.md)");
 pub const RunCommand = @import("./run_command.zig").RunCommand;
 pub const ShellCompletions = @import("./shell_completions.zig");
-pub const UpdateCommand = @import("./update_command.zig").UpdateCommand;
-pub const UpgradeCommand = @import("./upgrade_command.zig").UpgradeCommand;
-pub const BunxCommand = @import("./bunx_command.zig").BunxCommand;
+pub const UpdateCommand = @compileError("zun-gate(install): ./update_command.zig is not restored yet (docs/status/restore.md)");
+pub const UpgradeCommand = @compileError("zun-gate(oven_services): ./upgrade_command.zig is not restored yet (docs/status/restore.md)");
+pub const BunxCommand = @compileError("zun-gate(install): ./bunx_command.zig is not restored yet (docs/status/restore.md)");
 pub const ExecCommand = @import("./exec_command.zig").ExecCommand;
-pub const PatchCommand = @import("./patch_command.zig").PatchCommand;
-pub const PatchCommitCommand = @import("./patch_commit_command.zig").PatchCommitCommand;
-pub const OutdatedCommand = @import("./outdated_command.zig").OutdatedCommand;
-pub const UpdateInteractiveCommand = @import("./update_interactive_command.zig").UpdateInteractiveCommand;
-pub const PublishCommand = @import("./publish_command.zig").PublishCommand;
-pub const PackCommand = @import("./pack_command.zig").PackCommand;
-pub const AuditCommand = @import("./audit_command.zig").AuditCommand;
-pub const InitCommand = @import("./init_command.zig").InitCommand;
-pub const WhyCommand = @import("./why_command.zig").WhyCommand;
-pub const FuzzilliCommand = @import("./fuzzilli_command.zig").FuzzilliCommand;
-pub const ReplCommand = @import("./repl_command.zig").ReplCommand;
+pub const PatchCommand = @compileError("zun-gate(patch): ./patch_command.zig is not restored yet (docs/status/restore.md)");
+pub const PatchCommitCommand = @compileError("zun-gate(patch): ./patch_commit_command.zig is not restored yet (docs/status/restore.md)");
+pub const OutdatedCommand = @compileError("zun-gate(install): ./outdated_command.zig is not restored yet (docs/status/restore.md)");
+pub const UpdateInteractiveCommand = @compileError("zun-gate(install): ./update_interactive_command.zig is not restored yet (docs/status/restore.md)");
+pub const PublishCommand = @compileError("zun-gate(install): ./publish_command.zig is not restored yet (docs/status/restore.md)");
+pub const PackCommand = @compileError("zun-gate(install): ./pack_command.zig is not restored yet (docs/status/restore.md)");
+pub const AuditCommand = @compileError("zun-gate(install): ./audit_command.zig is not restored yet (docs/status/restore.md)");
+pub const InitCommand = @compileError("zun-gate(cli_init): ./init_command.zig is not restored yet (docs/status/restore.md)");
+pub const WhyCommand = @compileError("zun-gate(install): ./why_command.zig is not restored yet (docs/status/restore.md)");
+pub const FuzzilliCommand = @compileError("zun-gate(fuzzilli): ./fuzzilli_command.zig is not restored yet (docs/status/restore.md)");
+pub const ReplCommand = @compileError("zun-gate(cli_repl): ./repl_command.zig is not restored yet (docs/status/restore.md)");
 
 pub const Arguments = @import("./Arguments.zig");
 
@@ -203,7 +203,7 @@ pub const HelpCommand = struct {
     ;
 
     pub fn printWithReason(comptime reason: Reason, show_all_flags: bool) void {
-        var rand_state = std.Random.DefaultPrng.init(@as(u64, @intCast(@max(std.time.milliTimestamp(), 0))));
+        var rand_state = std.Random.DefaultPrng.init(@as(u64, @intCast(@max(bun.compat.milliTimestamp(), 0))));
         const rand = rand_state.random();
 
         const package_x_i = rand.uintAtMost(usize, packages_to_x_filler.len - 1);
@@ -553,7 +553,8 @@ pub const Command = struct {
         }
 
         // bun build --compile entry point
-        if (!bun.feature_flag.BUN_BE_BUN.get()) {
+        // zun-gate(standalone): `--compile` executables come back with src/standalone_graph (item 10).
+        if (comptime bun.restore_flags.standalone) if (!bun.feature_flag.BUN_BE_BUN.get()) {
             if (try bun.StandaloneModuleGraph.fromExecutable(bun.default_allocator)) |graph| {
                 var offset_for_passthrough: usize = 0;
 
@@ -614,135 +615,135 @@ pub const Command = struct {
                 );
                 return;
             }
-        }
+        };
 
         debug("argv: [{f}]", .{bun.fmt.fmtSlice(bun.argv, ", ")});
 
         const tag = which();
 
         switch (tag) {
-            .DiscordCommand => return try DiscordCommand.exec(allocator),
+            .DiscordCommand => if (comptime bun.restore_flags.oven_services) return try DiscordCommand.exec(allocator) else bun.restore_flags.cliUnavailable("zun discord"),
             .HelpCommand => return try HelpCommand.exec(allocator),
             .ReservedCommand => return try ReservedCommand.exec(allocator),
-            .InitCommand => return try InitCommand.exec(allocator, bun.argv[@min(2, bun.argv.len)..]),
-            .InfoCommand => {
+            .InitCommand => if (comptime bun.restore_flags.cli_init) return try InitCommand.exec(allocator, bun.argv[@min(2, bun.argv.len)..]) else bun.restore_flags.cliUnavailable("zun init"),
+            .InfoCommand => if (comptime bun.restore_flags.install) {
                 try @"bun info"(allocator, log);
                 return;
-            },
-            .BuildCommand => {
+            } else bun.restore_flags.cliUnavailable("zun info"),
+            .BuildCommand => if (comptime bun.restore_flags.bundler) {
                 const ctx = try Command.init(allocator, log, .BuildCommand);
                 try BuildCommand.exec(ctx, null);
-            },
-            .InstallCompletionsCommand => {
+            } else bun.restore_flags.cliUnavailable("zun build"),
+            .InstallCompletionsCommand => if (comptime bun.restore_flags.cli_completions) {
                 try InstallCompletionsCommand.exec(allocator);
                 return;
-            },
-            .InstallCommand => {
+            } else bun.restore_flags.cliUnavailable("zun completions"),
+            .InstallCommand => if (comptime bun.restore_flags.install) {
                 const ctx = try Command.init(allocator, log, .InstallCommand);
 
                 try InstallCommand.exec(ctx);
                 return;
-            },
-            .AddCommand => {
+            } else bun.restore_flags.cliUnavailable("zun install"),
+            .AddCommand => if (comptime bun.restore_flags.install) {
                 const ctx = try Command.init(allocator, log, .AddCommand);
 
                 try AddCommand.exec(ctx);
                 return;
-            },
-            .UpdateCommand => {
+            } else bun.restore_flags.cliUnavailable("zun add"),
+            .UpdateCommand => if (comptime bun.restore_flags.install) {
                 const ctx = try Command.init(allocator, log, .UpdateCommand);
 
                 try UpdateCommand.exec(ctx);
                 return;
-            },
-            .PatchCommand => {
+            } else bun.restore_flags.cliUnavailable("zun update"),
+            .PatchCommand => if (comptime bun.restore_flags.patch) {
                 const ctx = try Command.init(allocator, log, .PatchCommand);
 
                 try PatchCommand.exec(ctx);
                 return;
-            },
-            .PatchCommitCommand => {
+            } else bun.restore_flags.cliUnavailable("zun patch"),
+            .PatchCommitCommand => if (comptime bun.restore_flags.patch) {
                 const ctx = try Command.init(allocator, log, .PatchCommitCommand);
 
                 try PatchCommitCommand.exec(ctx);
                 return;
-            },
-            .OutdatedCommand => {
+            } else bun.restore_flags.cliUnavailable("zun patch-commit"),
+            .OutdatedCommand => if (comptime bun.restore_flags.install) {
                 const ctx = try Command.init(allocator, log, .OutdatedCommand);
 
                 try OutdatedCommand.exec(ctx);
                 return;
-            },
-            .UpdateInteractiveCommand => {
+            } else bun.restore_flags.cliUnavailable("zun outdated"),
+            .UpdateInteractiveCommand => if (comptime bun.restore_flags.install) {
                 const ctx = try Command.init(allocator, log, .UpdateInteractiveCommand);
 
                 try UpdateInteractiveCommand.exec(ctx);
                 return;
-            },
-            .PublishCommand => {
+            } else bun.restore_flags.cliUnavailable("zun update --interactive"),
+            .PublishCommand => if (comptime bun.restore_flags.install) {
                 const ctx = try Command.init(allocator, log, .PublishCommand);
 
                 try PublishCommand.exec(ctx);
                 return;
-            },
-            .AuditCommand => {
+            } else bun.restore_flags.cliUnavailable("zun publish"),
+            .AuditCommand => if (comptime bun.restore_flags.install) {
                 const ctx = try Command.init(allocator, log, .AuditCommand);
                 try AuditCommand.exec(ctx);
-            },
-            .WhyCommand => {
+            } else bun.restore_flags.cliUnavailable("zun audit"),
+            .WhyCommand => if (comptime bun.restore_flags.install) {
                 const ctx = try Command.init(allocator, log, .WhyCommand);
                 try WhyCommand.exec(ctx);
                 return;
-            },
-            .BunxCommand => {
+            } else bun.restore_flags.cliUnavailable("zun why"),
+            .BunxCommand => if (comptime bun.restore_flags.install) {
                 const ctx = try Command.init(allocator, log, .BunxCommand);
 
                 try BunxCommand.exec(ctx, bun.argv[if (is_bunx_exe) 0 else 1..]);
                 return;
-            },
-            .ReplCommand => {
+            } else bun.restore_flags.cliUnavailable("zunx / zun x"),
+            .ReplCommand => if (comptime bun.restore_flags.cli_repl) {
                 const ctx = try Command.init(allocator, log, .RunCommand);
                 try ReplCommand.exec(ctx);
                 return;
-            },
-            .RemoveCommand => {
+            } else bun.restore_flags.cliUnavailable("zun repl"),
+            .RemoveCommand => if (comptime bun.restore_flags.install) {
                 const ctx = try Command.init(allocator, log, .RemoveCommand);
 
                 try RemoveCommand.exec(ctx);
                 return;
-            },
-            .LinkCommand => {
+            } else bun.restore_flags.cliUnavailable("zun remove"),
+            .LinkCommand => if (comptime bun.restore_flags.install) {
                 const ctx = try Command.init(allocator, log, .LinkCommand);
 
                 try LinkCommand.exec(ctx);
                 return;
-            },
-            .UnlinkCommand => {
+            } else bun.restore_flags.cliUnavailable("zun link"),
+            .UnlinkCommand => if (comptime bun.restore_flags.install) {
                 const ctx = try Command.init(allocator, log, .UnlinkCommand);
 
                 try UnlinkCommand.exec(ctx);
                 return;
-            },
-            .PackageManagerCommand => {
+            } else bun.restore_flags.cliUnavailable("zun unlink"),
+            .PackageManagerCommand => if (comptime bun.restore_flags.install) {
                 const ctx = try Command.init(allocator, log, .PackageManagerCommand);
 
                 try PackageManagerCommand.exec(ctx);
                 return;
-            },
-            .TestCommand => {
+            } else bun.restore_flags.cliUnavailable("zun pm"),
+            .TestCommand => if (comptime bun.restore_flags.test_runner) {
                 const ctx = try Command.init(allocator, log, .TestCommand);
 
                 try TestCommand.exec(ctx);
                 return;
-            },
-            .GetCompletionsCommand => {
+            } else bun.restore_flags.cliUnavailable("zun test"),
+            .GetCompletionsCommand => if (comptime bun.restore_flags.cli_completions) {
                 try @"bun getcompletes"(allocator, log);
                 return;
-            },
-            .CreateCommand => {
+            } else bun.restore_flags.cliUnavailable("zun getcompletes"),
+            .CreateCommand => if (comptime bun.restore_flags.install) {
                 try @"bun create"(allocator, log);
                 return;
-            },
+            } else bun.restore_flags.cliUnavailable("zun create"),
             .RunCommand => {
                 const ctx = try Command.init(allocator, log, .RunCommand);
                 ctx.args.target = .bun;
@@ -774,11 +775,11 @@ pub const Command = struct {
                 bun.assert(pretend_to_be_node);
                 try RunCommand.execAsIfNode(ctx);
             },
-            .UpgradeCommand => {
+            .UpgradeCommand => if (comptime bun.restore_flags.oven_services) {
                 const ctx = try Command.init(allocator, log, .UpgradeCommand);
                 try UpgradeCommand.exec(ctx);
                 return;
-            },
+            } else bun.restore_flags.cliUnavailable("zun upgrade"),
             .AutoCommand => {
                 const ctx = Command.init(allocator, log, .AutoCommand) catch |e| {
                     switch (e) {
@@ -818,7 +819,8 @@ pub const Command = struct {
                 // KEYWORDS: open file argv argv0
                 if (ctx.args.entry_points.len == 1) {
                     if (strings.eqlComptime(extension, ".lockb")) {
-                        return try @"bun ./bun.lockb"(ctx);
+                        // zun-gate(install): printing a binary lockfile needs src/install (item 8).
+                        if (comptime bun.restore_flags.install) return try @"bun ./bun.lockb"(ctx) else bun.restore_flags.cliUnavailable("zun ./bun.lockb");
                     }
                 }
 
@@ -835,13 +837,13 @@ pub const Command = struct {
                 Output.flush();
                 try HelpCommand.exec(allocator);
             },
-            .ExecCommand => {
+            .ExecCommand => if (comptime bun.restore_flags.shell) {
                 const ctx = try Command.init(allocator, log, .ExecCommand);
 
                 if (ctx.positionals.len > 1) {
                     try ExecCommand.exec(ctx);
                 } else Tag.printHelp(.ExecCommand, true);
-            },
+            } else bun.restore_flags.cliUnavailable("zun exec"),
             .FuzzilliCommand => {
                 if (bun.Environment.enable_fuzzilli) {
                     const ctx = try Command.init(allocator, log, .FuzzilliCommand);
@@ -1174,7 +1176,7 @@ pub const Command = struct {
     fn @"bun --eval --print"(ctx: Context) !void {
         const trigger = bun.pathLiteral("/[eval]");
         var entry_point_buf: [bun.MAX_PATH_BYTES + trigger.len]u8 = undefined;
-        const cwd = try std.posix.getcwd(&entry_point_buf);
+        const cwd = try bun.getcwd(&entry_point_buf);
         @memcpy(entry_point_buf[cwd.len..][0..trigger.len], trigger);
         ctx.passthrough = try std.mem.concat(ctx.allocator, []const u8, &.{ ctx.positionals, ctx.passthrough });
         try bun_js.Run.boot(ctx, entry_point_buf[0 .. cwd.len + trigger.len], null);
@@ -1454,30 +1456,31 @@ pub const Command = struct {
 
 pub fn printVersionAndExit() noreturn {
     @branchHint(.cold);
-    Output.writer().writeAll(Global.package_json_version ++ "\n") catch {};
+    // zun: report zun's own version and the Bun release it tracks (docs/identity.md).
+    Output.writer().writeAll(bun.zun.version_line ++ "\n") catch {};
     Global.exit(0);
 }
 
 pub fn printRevisionAndExit() noreturn {
     @branchHint(.cold);
-    Output.writer().writeAll(Global.package_json_version_with_revision ++ "\n") catch {};
+    Output.writer().writeAll(bun.zun.revision_line ++ "\n") catch {};
     Global.exit(0);
 }
 
 const string = []const u8;
 
-const AddCompletions = @import("./add_completions.zig");
+const AddCompletions = @compileError("zun-gate(install): ./add_completions.zig is not restored yet (docs/status/restore.md)");
 const FilterRun = @import("./filter_run.zig");
 const MultiRun = @import("./multi_run.zig");
-const PmViewCommand = @import("./pm_view_command.zig");
+const PmViewCommand = @compileError("zun-gate(install): ./pm_view_command.zig is not restored yet (docs/status/restore.md)");
 const fs = @import("../resolver/fs.zig");
 const options = @import("../bundler/options.zig");
 const std = @import("std");
 const ColonListType = @import("./colon_list_type.zig").ColonListType;
 const RunCommand_ = @import("./run_command.zig").RunCommand;
-const TestCommand = @import("./test_command.zig").TestCommand;
+const TestCommand = @compileError("zun-gate(test_runner): ./test_command.zig is not restored yet (docs/status/restore.md)");
 
-const Install = @import("../install/install.zig");
+const Install = @compileError("zun-gate(install): src/install is not restored yet (docs/status/restore.md)");
 const PackageManager = Install.PackageManager;
 
 const bun = @import("bun");

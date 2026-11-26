@@ -8,12 +8,8 @@ const jsc = @import("bun").jsc;
 const JSGlobalObject = jsc.JSGlobalObject;
 const JSValue = jsc.JSValue;
 
-// --- CLI-derived globals (src/cli/Arguments.zig is fully removed; these
-// keep their upstream defaults since there is no flag parsing to set them). ---
-
-export var Bun__Node__ProcessNoDeprecation: bool = false;
-export var Bun__Node__ProcessThrowDeprecation: bool = false;
-export var Bun__Node__UseSystemCA: bool = false;
+// zun: Bun__Node__{ProcessNoDeprecation,ProcessThrowDeprecation,UseSystemCA,ZeroFillBuffers}
+// live in src/cli/Arguments.zig again (CLI restore, R2), where the flags set them.
 
 /// `process.release.sourceUrl`. Real value in reference is generated from
 /// the upgrade command's version/target templating (src/cli/upgrade_command.zig),
@@ -37,12 +33,6 @@ pub export fn Bake__getNewRouteParamsJSFunctionImpl(_: *JSGlobalObject) JSValue 
 // is a real, live implementation (kept alive via fixDeadCodeElimination(),
 // called from bun.js.zig's Run exit path), not a CUT feature.
 
-// zun (RT-1): C++ reads this as a data symbol (`extern "C" bool` in
-// JSBuffer.cpp, used by `Buffer.allocUnsafe`). It was stubbed as a function,
-// so C++ read the first byte of machine code as the bool. Upstream 1.3.14
-// defines it exactly like this in src/cli/Arguments.zig, where
-// `--zero-fill-buffers` sets it; the CLI restore moves it back there.
-pub export var Bun__Node__ZeroFillBuffers: bool = false;
 
 pub export fn BunServe__onResolvePlugins(_: *JSGlobalObject, _: *jsc.CallFrame) JSValue {
     return .js_undefined;

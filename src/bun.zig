@@ -176,7 +176,7 @@ pub const JSTerminated = error{
 
 pub const JSOOM = OOM || JSError;
 
-// bzrt-cut: pub const ci = @import("./cli/ci_info.zig");
+pub const ci = @import("./cli/ci_info.zig");
 
 /// Cross-platform system APIs
 pub const sys = @import("./sys/sys.zig");
@@ -739,7 +739,7 @@ pub fn StringEnum(comptime Type: type, comptime Map: anytype, value: []const u8)
     return ComptimeStringMap(Type, Map).get(value);
 }
 
-// bzrt-cut: pub const Bunfig = @import("./cli/bunfig.zig").Bunfig;
+pub const Bunfig = @import("./cli/bunfig.zig").Bunfig;
 
 pub const HTTPThread = @import("./http/http.zig").HTTPThread;
 pub const http = @import("./http/http.zig");
@@ -1214,20 +1214,11 @@ pub fn isMissingIOUring() bool {
     };
 }
 
-// bzrt-cut: pub const cli = @import("./cli/cli.zig");
-/// bzrt: cli removed; crash_handler touches only these two fields for diagnostics.
-pub const cli_compat = struct {
-    pub const is_main_thread: bool = true;
-    pub const cmd: ?struct {
-        pub fn char(_: @This()) u8 {
-            return '_';
-        }
-    } = null;
-};
+pub const cli = @import("./cli/cli.zig");
 
 // bzrt-cut: pub const install = @import("./install/install.zig");
 // bzrt-cut: pub const PackageManager = install.PackageManager;
-// bzrt-cut: pub const RunCommand = @import("./cli/run_command.zig").RunCommand;
+pub const RunCommand = @import("./cli/run_command.zig").RunCommand;
 
 pub const fs = @import("./resolver/fs.zig");
 pub const transpiler = @import("./bundler/transpiler.zig");
@@ -3844,8 +3835,8 @@ pub const deprecated = @import("./bun_core/deprecated.zig");
 pub fn getUseSystemCA(globalObject: *jsc.JSGlobalObject, callFrame: *jsc.CallFrame) error{ JSError, OutOfMemory }!jsc.JSValue {
     _ = globalObject;
     _ = callFrame;
-    // bzrt-cut:     const Arguments = @import("./cli/Arguments.zig");
-    return jsc.JSValue.jsBoolean(false); // bzrt: CLI removed
+    const Arguments = @import("./cli/Arguments.zig");
+    return jsc.JSValue.jsBoolean(Arguments.Bun__Node__UseSystemCA);
 }
 
 // Claude thinks its bun.JSC when we renamed it to bun.jsc months ago.

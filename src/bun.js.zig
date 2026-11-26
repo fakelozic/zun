@@ -31,8 +31,11 @@ pub const Run = struct {
         js_ast.Stmt.Data.Store.create();
         const arena = Arena.init();
 
-        // bzrt-cut: bunfig.toml loading lived in cli/Arguments.zig, which is
-        // fully removed (no CLI/config-file parsing in this runtime).
+        // Load the config file unless disabled by compile flags
+        // Note: config loading with execArgv is handled earlier in cli.zig via loadConfig
+        if (!ctx.debug.loaded_bunfig and !graph_ptr.flags.disable_autoload_bunfig) {
+            try bun.cli.Arguments.loadLocalConfigAuto(ctx.allocator, ctx, .RunCommand);
+        }
 
         run = .{
             .vm = try VirtualMachine.initWithModuleGraph(.{
@@ -136,10 +139,20 @@ pub const Run = struct {
     pub fn boot(ctx: Command.Context, entry_path: string, loader: ?bun.options.Loader) !void {
         jsc.markBinding(@src());
 
-        // bzrt-cut: bunfig.toml loading lived in cli/Arguments.zig, which is
-        // fully removed (no CLI/config-file parsing in this runtime).
-        // bzrt-cut: `src/shell/` is fully removed — no special-cased `.sh`
-        // entrypoint execution (shell is CUT per tz.md).
+        if (!ctx.debug.loaded_bunfig) {
+            try bun.cli.Arguments.loadLocalConfigAuto(ctx.allocator, ctx, .RunCommand);
+        }
+
+        // The shell does not need to initialize JSC (upstream runs `.sh` entry points with the
+        // Bun shell here). zun: `src/shell` is not restored yet, so say so instead of running a
+        // shell script as JavaScript.
+        if (strings.endsWithComptime(entry_path, ".sh")) {
+            if (comptime bun.restore_flags.shell) {
+                const exit_code = try Run.bootBunShell(ctx, entry_path);
+                Global.exit(exit_code);
+                return;
+            } else bun.restore_flags.cliUnavailable("zun file.sh (Bun shell scripts)");
+        }
 
         bun.jsc.initialize(ctx.runtime_options.eval.eval_and_print);
 
@@ -728,19 +741,7 @@ const CPUProfiler = @import("./jsc/BunCPUProfiler.zig");
 const HeapProfiler = @import("./jsc/BunHeapProfiler.zig");
 const options = @import("./bundler/options.zig");
 const std = @import("std");
-// bzrt: CLI (src/cli/) is fully removed, but the option-carrying types it
-// used to own live in options_types/Context.zig (kept independent of cli/
-// on purpose, see that file's header) and are still real/complete. Alias
-// them here instead of stubbing Context to `struct {}` so Run.boot/Run.start
-// below (real bootstrap/event-loop code, not CUT) keep working.
-const Command = struct {
-    const ContextTypes = @import("./options_types/Context.zig");
-    pub const Context = ContextTypes.Context;
-    pub const ContextData = ContextTypes.ContextData;
-    pub const RuntimeOptions = ContextTypes.RuntimeOptions;
-    pub const DebugOptions = ContextTypes.DebugOptions;
-    pub const HotReload = ContextTypes.HotReload;
-};
+const Command = bun.cli.Command;
 const which = @import("./which/which.zig").which;
 
 const bun = @import("bun");

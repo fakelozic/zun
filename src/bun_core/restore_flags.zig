@@ -15,6 +15,15 @@
 
 /// `src/cli` (argument parsing, subcommand dispatch). Roadmap Phase 4 item 3.
 pub const cli = false;
+/// `zun init` (`cli/init_command.zig` + templates). Item 3, checkpoint (c).
+pub const cli_init = false;
+/// `zun repl` (`cli/repl_command.zig`, `cli/repl.zig`). Item 3, checkpoint (c).
+pub const cli_repl = false;
+/// `zun completions` / `zun getcompletes` (shell completion scripts). Item 3, checkpoint (c).
+pub const cli_completions = false;
+/// Not a restore flag: commands that talk to Oven's services (`upgrade`, `discord`, `feedback`)
+/// stay off by policy (AGENTS.md rule 6: no outbound calls to third parties). Never flip this.
+pub const oven_services = false;
 /// `src/test_runner` + `zun test` + `bun:test`. Item 4.
 pub const test_runner = false;
 /// `src/js_parser_jsc` + `Bun.Transpiler`. Item 5.

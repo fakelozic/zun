@@ -106,6 +106,8 @@ pub const ProcessExitHandler = struct {
     pub const TaggedPointer = bun.TaggedPointerUnion(
         .{
             Subprocess,
+            ProcessHandle,
+            MultiRunProcessHandle,
             // bzrt-cut: LifecycleScriptSubprocess, SecurityScanSubprocess (install), ShellSubprocess (shell)
             WebViewHostProcess,
             ChromeProcess,
@@ -129,7 +131,15 @@ pub const ProcessExitHandler = struct {
                 const subprocess = this.ptr.as(Subprocess);
                 subprocess.onProcessExit(process, status, rusage);
             },
-            // bzrt-cut: ProcessHandle/MultiRunProcessHandle (cli), TestWorkerHandle (test_runner),
+            @field(TaggedPointer.Tag, @typeName(ProcessHandle)) => {
+                const subprocess = this.ptr.as(ProcessHandle);
+                subprocess.onProcessExit(process, status, rusage);
+            },
+            @field(TaggedPointer.Tag, @typeName(MultiRunProcessHandle)) => {
+                const subprocess = this.ptr.as(MultiRunProcessHandle);
+                subprocess.onProcessExit(process, status, rusage);
+            },
+            // bzrt-cut: TestWorkerHandle (test_runner),
             // LifecycleScriptSubprocess/SecurityScanSubprocess (install), ShellSubprocess (shell)
             @field(TaggedPointer.Tag, @typeName(WebViewHostProcess)) => {
                 const subprocess = this.ptr.as(WebViewHostProcess);
@@ -1982,8 +1992,8 @@ pub const sync = struct {
 
     pub const Result = struct {
         status: Status,
-        stdout: std.array_list.Managed(u8) = .{ .items = &.{}, .allocator = bun.default_allocator, .capacity = 0 },
-        stderr: std.array_list.Managed(u8) = .{ .items = &.{}, .allocator = bun.default_allocator, .capacity = 0 },
+        stdout: std.array_list.Managed(u8) = .init(bun.default_allocator),
+        stderr: std.array_list.Managed(u8) = .init(bun.default_allocator),
 
         pub fn isOK(this: *const Result) bool {
             return this.status.isOK();
@@ -2453,7 +2463,7 @@ pub const sync = struct {
                 for (&out) |*array_list| {
                     array_list.clearAndFree();
                 }
-                _ = std.c.kill(process.pid, 1);
+                _ = std.c.kill(process.pid, std.posix.SIG.HUP);
             }
 
             for (out_fds) |fd| {
@@ -2774,7 +2784,7 @@ pub const sync = struct {
             var kmask = linux.sigemptyset();
             linux.sigaddset(&kmask, std.posix.SIG.CHLD);
             const rc = linux.signalfd(-1, &kmask, linux.SFD.CLOEXEC | linux.SFD.NONBLOCK);
-            switch (linux.E.init(rc)) {
+            switch (linux.errno(rc)) {
                 .SUCCESS => break :blk bun.FD.fromNative(@intCast(rc)),
                 else => break :blk bun.invalid_fd,
             }
@@ -2803,7 +2813,7 @@ pub const sync = struct {
             _ = std.posix.prctl(.SET_PDEATHSIG, .{0}) catch {};
         }
         defer if (ppid > 1) {
-            _ = std.posix.prctl(.SET_PDEATHSIG, .{std.posix.SIG.KILL}) catch {};
+            _ = std.posix.prctl(.SET_PDEATHSIG, .{@intFromEnum(std.posix.SIG.KILL)}) catch {};
         };
         if (ppid > 1 and std.c.getppid() != ppid)
             bun.Global.exit(bun.ParentDeathWatchdog.exit_code);
@@ -2922,8 +2932,8 @@ pub const sync = struct {
 };
 
 const std = @import("std");
-// bzrt-cut: const MultiRunProcessHandle = @import("../../../cli/multi_run.zig").ProcessHandle;
-// bzrt-cut: const ProcessHandle = @import("../../../cli/filter_run.zig").ProcessHandle;
+const MultiRunProcessHandle = @import("../../../cli/multi_run.zig").ProcessHandle;
+const ProcessHandle = @import("../../../cli/filter_run.zig").ProcessHandle;
 // bzrt-cut: const TestWorkerHandle = @import("../../../cli/test/ParallelRunner.zig").Worker;
 
 const CronRegisterJob = @import("../cron.zig").CronRegisterJob;

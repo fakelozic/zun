@@ -285,7 +285,7 @@ pub fn crashHandler(
                         writer.writeAll(Output.prettyFmt("<r><d>", true)) catch std.c.abort();
                     }
 
-                    if (bun.cli_compat.is_main_thread) {
+                    if (bun.cli.Cli.is_main_thread) {
                         writer.writeAll("(main thread)") catch std.c.abort();
                     } else switch (bun.Environment.os) {
                         .windows => {
@@ -517,7 +517,7 @@ pub fn handleRootError(err: anyerror, error_return_trace: ?*std.lang.StackTrace)
 
         error.SystemFdQuotaExceeded => {
             if (comptime bun.Environment.isPosix) {
-                const limit = if (std.posix.getrlimit(.NOFILE)) |limit| limit.cur else null;
+                const limit = if (std.posix.getrlimit(.NOFILE)) |limit| limit.cur else |_| null;
                 if (comptime bun.Environment.isMac) {
                     Output.prettyError(
                         \\<r><red>error<r>: Your computer ran out of file descriptors <d>(<red>SystemFdQuotaExceeded<r><d>)<r>
@@ -600,7 +600,7 @@ pub fn handleRootError(err: anyerror, error_return_trace: ?*std.lang.StackTrace)
 
         error.ProcessFdQuotaExceeded => {
             if (comptime bun.Environment.isPosix) {
-                const limit = if (std.posix.getrlimit(.NOFILE)) |limit| limit.cur else null;
+                const limit = if (std.posix.getrlimit(.NOFILE)) |limit| limit.cur else |_| null;
                 if (comptime bun.Environment.isMac) {
                     Output.prettyError(
                         \\
@@ -1338,7 +1338,7 @@ fn encodeTraceString(opts: TraceString, writer: anytype) !void {
             "/" ++
             .{@intFromEnum(Platform.current)},
     );
-    try writer.writeByte(if (bun.cli_compat.cmd) |cmd| cmd.char() else '_');
+    try writer.writeByte(if (bun.cli.Cli.cmd) |cmd| cmd.char() else '_');
 
     try writer.writeAll(version_char ++ git_sha);
 

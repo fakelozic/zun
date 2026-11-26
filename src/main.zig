@@ -66,50 +66,7 @@ pub fn main(init: std.process.Init.Minimal) void {
     _bun.StackCheck.configureThread();
     _bun.ParentDeathWatchdog.install();
 
-    // bzrt: src/cli/ (arg parsing, subcommands) is fully removed — minimal
-    // process entrypoint per tz.md. argv[0] is the executable itself;
-    // argv[1] is the pre-built entry file to run, except for the two
-    // version-reporting flags the build system's own smoke test relies on.
-    if (_bun.argv.len > 1 and _bun.strings.eqlComptime(_bun.argv[1], "--version")) {
-        Output.writer().writeAll(_bun.zun.version_line ++ "\n") catch {};
-        _bun.Global.exit(0);
-    } else if (_bun.argv.len > 1 and _bun.strings.eqlComptime(_bun.argv[1], "--revision")) {
-        Output.writer().writeAll(_bun.zun.revision_line ++ "\n") catch {};
-        _bun.Global.exit(0);
-    } else if (_bun.argv.len > 1) {
-        // zun (RT-2): everything after the entry path goes to the script
-        // (`process.argv.slice(2)`), as with `bun file.js a b`.
-        const entry_index: usize = blk: {
-            if (_bun.strings.eqlComptime(_bun.argv[1], "run")) {
-                for (_bun.argv[2..], 2..) |arg, i| {
-                    if (arg.len > 0 and arg[0] != '-') break :blk i;
-                }
-                Output.errGeneric("Usage: {s} run path/to/script.js", .{_bun.argv[0]});
-                Output.flush();
-                _bun.Global.exit(1);
-            }
-            break :blk 1;
-        };
-        const entry_path = _bun.argv[entry_index];
-        // `[][:0]const u8` coerces to `[]const []const u8` (Zig 0.17.1, probe
-        // docs/zig/probes/rt2-launcher/coerce.zig); `bun.argv` lives for the process.
-        const passthrough: []const []const u8 = _bun.argv[entry_index + 1 ..];
-        var runtime: Runtime = undefined;
-        runtime.init(_bun.default_allocator) catch |err| {
-            Output.panic("Failed to initialize runtime boundary: {s}\n", .{@errorName(err)});
-        };
-        defer runtime.deinit();
-        runtime.loadEntryPath(entry_path, passthrough) catch |err| {
-            Output.panic("Failed to load runtime entrypoint: {s}\n", .{@errorName(err)});
-        };
-        runtime.run() catch |err| {
-            Output.panic("Failed to run entry file: {s}\n", .{@errorName(err)});
-        };
-    } else {
-        Output.errGeneric("Usage: {s} path/to/script.js", .{if (_bun.argv.len > 0) _bun.argv[0] else "zun"});
-        Output.flush();
-        _bun.Global.exit(1);
-    }
+    _bun.cli.Cli.start(_bun.default_allocator);
     _bun.Global.exit(0);
 }
 
@@ -142,6 +99,5 @@ const builtin = @import("builtin");
 const std = @import("std");
 
 const _bun = @import("bun");
-const Runtime = _bun.rt.monolith.Runtime;
 const Environment = _bun.Environment;
 const Output = _bun.Output;
