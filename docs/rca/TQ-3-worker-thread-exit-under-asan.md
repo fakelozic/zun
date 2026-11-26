@@ -1,6 +1,6 @@
 # TQ-3: Worker threads end with `pthread_exit` inside live C++ frames; Zig's per-thread signal stack fights ASAN's
 
-- **Status:** fix prepared (branch `t3/fix-worker-thread-exit`), **not yet built or verified** (no build slot).
+- **Status:** **fixed and verified 2026-11-27**: re-ran all 82 Worker / sanitizer-flagged parity tests under ASAN: all 47 that ASAN flagged (35 SANITIZER + 11 CRASH:asan-check + 1 SANITIZER:asan) now pass with no ASAN report; the 21 earlier passes still pass; the 12 FAIL / 1 panic / 1 timeout are unchanged (behaviour gaps, TQ-7). Nested-worker tests (`test-worker-nested-uncaught`, `-nested-on-process-exit`, `-terminate-nested`) pass under ASAN. **Unconfirmed lead** from an interrupted independent review: a possible lifetime issue when a nested Worker's parent context goes away first; not reproduced, worth a targeted test.
   Fixes A and B below are implemented as described in "Implementation"; `zig ast-check` passes on the changed Zig
   files. The regression test fails on the unfixed snapshot `build/snap-0a5b26b/zun-debug` and passes on Node 26.
   Also closes the investigation part of RT-3 (`docs/security/known-issues.md`).
