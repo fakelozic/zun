@@ -22,8 +22,11 @@
 /// This is useful for testing as a crash in here will not 'panicked during a panic'.
 pub const enable = true;
 
-/// Overridable with BUN_CRASH_REPORT_URL environment variable.
-const default_report_base_url = "https://bun.report";
+/// zun: the trace string is printed locally only. Without ZUN_/BUN_CRASH_REPORT_URL the
+/// prefix is not a URL, so nothing points users (or tools) at Oven's bun.report service;
+/// a zun build's addresses would not decode against Bun's debug symbols anyway.
+/// See docs/identity.md. Overridable with ZUN_CRASH_REPORT_URL / BUN_CRASH_REPORT_URL.
+const default_report_base_url = "zun-trace:";
 
 /// Only print the `Bun has crashed` message once. Once this is true, control
 /// flow is not returned to the main application.
@@ -363,8 +366,8 @@ pub fn crashHandler(
                             writer.print(Output.prettyFmt(
                                 \\Bun has encountered a crash while running the <red><d>"{s}"<r> native plugin.
                                 \\
-                                \\To send a redacted crash report to Bun's team,
-                                \\please file a GitHub issue using the link below:
+                                \\This is zun, a fork of Bun: please don't report it to the Bun team.
+                                \\Nothing was sent anywhere. Local crash trace (for zun's developers):
                                 \\
                                 \\
                             , true), .{native_plugin_name}) catch std.c.abort();
@@ -386,8 +389,8 @@ pub fn crashHandler(
                             writer.writeAll(
                                 \\Bun has run out of memory.
                                 \\
-                                \\To send a redacted crash report to Bun's team,
-                                \\please file a GitHub issue using the link below:
+                                \\This is zun, a fork of Bun: please don't report it to the Bun team.
+                                \\Nothing was sent anywhere. Local crash trace (for zun's developers):
                                 \\
                                 \\
                             ) catch std.c.abort();
@@ -395,8 +398,8 @@ pub fn crashHandler(
                             writer.writeAll(
                                 \\Bun has crashed. This indicates a bug in Bun, not your code.
                                 \\
-                                \\To send a redacted crash report to Bun's team,
-                                \\please file a GitHub issue using the link below:
+                                \\This is zun, a fork of Bun: please don't report it to the Bun team.
+                                \\Nothing was sent anywhere. Local crash trace (for zun's developers):
                                 \\
                                 \\
                             ) catch std.c.abort();
@@ -1431,30 +1434,10 @@ fn isReportingEnabled() bool {
         return value.len > 0;
     }
 
-    // Environment variable to specifically enable or disable reporting
-    if (bun.env_var.BUN_ENABLE_CRASH_REPORTING.get()) |enable_crash_reporting| {
-        return enable_crash_reporting;
-    }
-
-    // Debug builds shouldn't report to the default url by default
-    if (bun.Environment.isDebug)
-        return false;
-
-    if (bun.Environment.enable_asan)
-        return false;
-
-    // Honor DO_NOT_TRACK
-    if (!bun.analytics.isEnabled())
-        return false;
-
-    if (bun.Environment.is_canary)
-        return true;
-
-    // Change in v1.1.10: enable crash reporter auto upload on macOS and Windows.
-    if (bun.Environment.isMac or bun.Environment.isWindows) {
-        return true;
-    }
-
+    // zun: there is no default upload target. Bun auto-uploaded to bun.report on
+    // macOS/Windows/canary, or when BUN_ENABLE_CRASH_REPORTING=1; zun only uploads to a
+    // URL the user set explicitly (handled above; Bun's own crash-handler test points it
+    // at a local server). BUN_ENABLE_CRASH_REPORTING alone does nothing. docs/identity.md
     return false;
 }
 

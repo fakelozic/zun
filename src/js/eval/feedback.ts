@@ -132,8 +132,20 @@ function printHelp() {
   console.log([heading, "", usage, "", options, "", examples].join("\n"));
 }
 
+// zun: install root is ZUN_INSTALL, else BUN_INSTALL unless it points into the real
+// Bun's ~/.bun, else ~/.zun (same rule as bun.zun.installRoot; docs/identity.md).
+function explicitZunInstallRoot(): string | undefined {
+  if (process.env.ZUN_INSTALL) return process.env.ZUN_INSTALL;
+  const bunInstall = process.env.BUN_INSTALL;
+  if (!bunInstall) return undefined;
+  const realBunHome = path.join(os.homedir(), ".bun");
+  const resolved = path.resolve(bunInstall);
+  if (resolved === realBunHome || resolved.startsWith(realBunHome + path.sep)) return undefined;
+  return bunInstall;
+}
+
 async function readEmailFromBunInstall(): Promise<string | undefined> {
-  const installRoot = process.env.BUN_INSTALL ?? path.join(os.homedir(), ".bun");
+  const installRoot = explicitZunInstallRoot() ?? path.join(os.homedir(), ".zun");
   const emailFile = path.join(installRoot, "feedback");
   try {
     const data = await fsp.readFile(emailFile, "utf8");
@@ -148,7 +160,7 @@ async function readEmailFromBunInstall(): Promise<string | undefined> {
 }
 
 async function persistEmailToBunInstall(email: string): Promise<void> {
-  const installRoot = process.env.BUN_INSTALL;
+  const installRoot = explicitZunInstallRoot();
   if (!installRoot) return;
 
   const emailFile = path.join(installRoot, "feedback");
@@ -562,6 +574,15 @@ async function main() {
       process.exit(code);
     };
 
+    // zun: no default feedback service. Bun posted to https://bun.report/v1/feedback;
+    // zun only sends to an endpoint the user names (docs/identity.md).
+    const endpoint = process.env.ZUN_FEEDBACK_URL || process.env.BUN_FEEDBACK_URL;
+    if (!endpoint) {
+      logError("zun has no feedback service. Set ZUN_FEEDBACK_URL to choose where to send it. Nothing was sent.");
+      exit(1);
+      return;
+    }
+
     if (emailFlag && !isValidEmail(emailFlag)) {
       logError("The provided email must include both '@' and '.'.");
       exit(1);
@@ -593,7 +614,7 @@ async function main() {
 
     const normalizedEmail = email.trim();
 
-    if (process.env.BUN_INSTALL && !storedEmail) {
+    if (explicitZunInstallRoot() && !storedEmail) {
       await persistEmailToBunInstall(normalizedEmail);
     }
 
@@ -627,7 +648,6 @@ async function main() {
     const messageBody = normalizedMessage;
 
     const projectId = getOldestGitSha();
-    const endpoint = process.env.BUN_FEEDBACK_URL || "https://bun.report/v1/feedback";
 
     const form = new FormData();
     form.append("email", normalizedEmail);
