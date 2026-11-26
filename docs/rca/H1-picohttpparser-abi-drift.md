@@ -25,12 +25,17 @@ where a body ends.
 2. **The hidden trap in the obvious fix.** `src/picohttp_sys/picohttpparser.zig` declares `struct phr_chunked_decoder`
    **by hand** as a Zig `extern struct`, and the HTTP client embeds it in `InternalState`. The new picohttpparser
    **added two `uint64_t` fields** (`_total_read`, `_total_overhead`; size 16 → 32 bytes) and **renumbered its
-   private state enum** (`CHUNKED_IN_TRAILERS_LINE_HEAD` 4 → 6; 4 now means "inside chunk data").
+   private state enum** by splitting the old `CHUNKED_IN_CHUNK_CRLF` (3) in two: `CHUNKED_IN_CHUNK_DATA` 2 → 3,
+   new `CHUNKED_IN_CHUNK_DATA_EXPECT_CR` = 4 and `CHUNKED_IN_CHUNK_DATA_EXPECT_LF` = 5, `CHUNKED_IN_TRAILERS_LINE_HEAD`
+   4 → 6 and `_MIDDLE` 5 → 7 (old Zig mirror vs `picohttpparser.c` enum at `f4d94b48`; corrected after review
+   H1-3, an earlier version of this RCA said 4 meant "inside chunk data").
    Bumping only the pin would have caused:
    - an **out-of-bounds write**: C writes `_total_read` on every call, past the end of the 16-byte Zig struct,
      into whatever follows it in `InternalState`;
    - a **silent truncation bug**: `http.zig` and `ProxyTunnel.zig` matched `_state` against the old numbers in
-     `onClose`, so a connection closed *mid-chunk* would have been reported as a complete body.
+     `onClose` (4/5 = trailers, body complete), so a connection closed *after a chunk's data but before or inside
+     its CRLF* (new states 4/5) would have been reported as a complete body. A close in the middle of the data
+     (state 3) would still have failed correctly, because 3 was the old `CHUNK_CRLF`.
 
    Neither produces a compile error: the Zig and C views of the struct are never compared.
 
@@ -44,14 +49,20 @@ where a body ends.
   (`cmp`-identical).
 - Update the Zig mirror to the new layout and stop reading the decoder's private `_state`; ask the decoder through
   `phr_decode_chunked_is_in_trailers()` instead (`http.zig`, `ProxyTunnel.zig`).
-- Pin the layout **on both sides**: Zig `comptime` checks (`@sizeOf == 32`, offsets 16/24) and C `_Static_assert`s in
+- Pin the layout **on both sides**: Zig `comptime` checks and C `_Static_assert`s in
   `patches/picohttpparser/zun-abi-check.patch`. A future bump that changes the struct now fails the build.
+  (Originally size + the two last offsets only; after review H1-4 every field's offset and size, the field count
+  (Zig) and the alignment are pinned, so a field moving inside the 16-byte prefix also fails.)
 
 ## Regression test
 `test/js/node/test/parallel/test-zun-fetch-chunked.mjs`: 11 raw responses from a TCP server. Valid (incl. trailers,
 extensions, 20,000 one-byte chunks) must decode exactly; bare LF, whitespace after the size, non-hex size, size
-overflow, missing CRLF, **truncated mid-chunk**, and truncated before the terminal chunk must reject.
-Fails on the old binary (3 cases), passes on the new one and on Bun 1.4.5.
+overflow, missing CRLF, truncated mid-chunk, **truncated after the full chunk data before / inside its CRLF**, and
+truncated before the terminal chunk must reject. Fails on the old binary (3 cases), passes on the new one and on Bun 1.4.5.
+The two "after the full chunk data" cases (added after review H1-3) are the ones that end in C states 4 and 5, i.e.
+the cases a stale state mirror would accept; "truncated mid-chunk" ends in state 3 and could not catch it. Verified
+with a C probe against the pinned decoder (`docs/security/review-2026-11-26-verify-H1.md`). The CONNECT-tunnel
+(`ProxyTunnel.zig`) path has no equivalent test yet.
 
 ## Sibling search
 Same class: **Zig hand-mirrors of C types from vendored dependencies, unchecked against the C headers.**

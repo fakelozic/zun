@@ -385,8 +385,8 @@ pub fn onClose(
     if (in_progress) {
         if (client.state.isChunkedEncoding()) {
             // zun (security H1): ask the decoder instead of matching its private `_state` numbers, which
-            // picohttpparser renumbered (the old TRAILERS_LINE_HEAD value now means "mid chunk data",
-            // which would have reported a truncated body as complete).
+            // picohttpparser renumbered (the old TRAILERS_LINE_HEAD/MIDDLE values 4/5 now mean "chunk data read,
+            // CRLF missing / half read", which would have reported a truncated body as complete).
             if (picohttp.phr_decode_chunked_is_in_trailers(&client.state.chunked_decoder) != 0) {
                 // ignore failure if we are in the middle of trailer headers, since we processed all the chunks and trailers are ignored
                 client.state.flags.received_last_chunk = true;

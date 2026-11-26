@@ -23,8 +23,24 @@ pub const struct_phr_chunked_decoder = extern struct {
     _total_overhead: u64 = 0,
 
     comptime {
-        // Same numbers as the C `_Static_assert`s (x86_64 / aarch64 Linux).
-        if (@sizeOf(@This()) != 32 or @offsetOf(@This(), "_total_read") != 16 or @offsetOf(@This(), "_total_overhead") != 24)
+        // Same numbers as the C `_Static_assert`s in zun-abi-check.patch (x86_64 / aarch64 Linux): every field's
+        // offset and size, plus the struct's size and alignment. Zig writes `consume_trailer` and zero-initializes
+        // the whole struct, so a field moving inside the 16-byte prefix must fail the build too (review H1-4).
+        const expected = .{
+            .{ "bytes_left_in_chunk", 0, 8 },
+            .{ "consume_trailer", 8, 1 },
+            .{ "_hex_count", 9, 1 },
+            .{ "_state", 10, 1 },
+            .{ "_total_read", 16, 8 },
+            .{ "_total_overhead", 24, 8 },
+        };
+        if (@typeInfo(@This()).@"struct".field_names.len != expected.len)
+            @compileError("struct_phr_chunked_decoder: field count no longer matches picohttpparser.h");
+        for (expected) |e| {
+            if (@offsetOf(@This(), e[0]) != e[1] or @sizeOf(@FieldType(@This(), e[0])) != e[2])
+                @compileError("struct_phr_chunked_decoder." ++ e[0] ++ " no longer matches picohttpparser.h");
+        }
+        if (@sizeOf(@This()) != 32 or @alignOf(@This()) != 8)
             @compileError("struct_phr_chunked_decoder no longer matches picohttpparser.h");
     }
 };
