@@ -23,7 +23,8 @@ Start with `docs/ROADMAP.md` and `docs/GAP.md`.
      bounds/safety checks or sanitizers; no `catch unreachable` on input-driven errors; no `@setRuntimeSafety(false)` without a written reason.
    - Treat all network, file and env input as hostile. Prefer checked arithmetic and slices over raw pointers on input paths.
    - Every download in the build must be pinned (commit or version) **and** checksum-verified.
-   - Nothing is sent to third-party services (no telemetry, no crash upload).
+   - Nothing is sent to third-party services: no telemetry, and no crash upload by default. Crash upload happens only to a URL
+     the operator sets explicitly (`ZUN_CRASH_REPORT_URL`); there is never a built-in default endpoint.
    - Note any security-relevant change in the commit message (`security:` prefix), and log known issues in `docs/security/`.
 
 ## Where things are

@@ -24,6 +24,7 @@ export PATH=$PWD/vendor/llvm-21.1.8/bin:$PATH        # clang/lld/llvm-ar 21.1.8 
 export BUN_ZIG_PATH=$(mise where zig@0.17.1)          # vanilla Zig 0.17.1 instead of oven-sh/zig
 export PERL5LIB=$PWD/vendor/perl5                     # `use bigint` for src/codegen/create_hash_table
 export BUN_INSTALL_CACHE_DIR=$PWD/build/cache/bun-install   # keep `bun install` out of ~/.bun
+export BUN_RUNTIME_TRANSPILER_CACHE_PATH=$PWD/build/cache/bun-transpiler  # real bun (build tool) otherwise caches into ~/.bun/install/cache/@t@
 bun scripts/build.ts --profile=debug --cache-dir=build/cache
 # → build/debug/zun-debug   (same as `bun run build:debug`, plus the --cache-dir override)
 ```
