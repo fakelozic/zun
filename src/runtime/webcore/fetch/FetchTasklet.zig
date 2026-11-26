@@ -460,6 +460,14 @@ pub const FetchTasklet = struct {
         const vm = this.javascript_vm;
         // vm is shutting down we cannot touch JS
         if (vm.isShuttingDown()) {
+            // zun TLS-ID-1: the certificate will never be checked; release the
+            // parked HTTP-thread socket instead of leaving it to the idle
+            // timeout.
+            if (this.result.certificate_info) |certificate_info| {
+                this.result.certificate_info = null;
+                certificate_info.deinit(bun.default_allocator);
+                if (this.http) |http_| http.http_thread.scheduleShutdown(http_);
+            }
             this.mutex.unlock();
             if (is_done) {
                 this.deref();
@@ -516,6 +524,58 @@ pub const FetchTasklet = struct {
             try this.onBodyReceived();
             return;
         }
+        // zun TLS-ID-1 (review F-3): run the user's `checkServerIdentity` as
+        // soon as the certificate arrives. The HTTP thread parks the
+        // connection after the TLS handshake (`is_waiting_for_cert_check`)
+        // and writes nothing until this check passes, so this must run BEFORE
+        // the metadata-less early return below: the parked connection's first
+        // progress update carries only the certificate (no metadata, no
+        // failure). Before, the check ran only once response metadata had
+        // arrived, i.e. after the request had already been sent.
+        if (this.result.certificate_info) |certificate_info| {
+            this.result.certificate_info = null;
+            defer certificate_info.deinit(bun.default_allocator);
+
+            // we receive some error
+            if (this.reject_unauthorized and !this.checkServerIdentity(certificate_info)) {
+                log("onProgressUpdate: aborted due certError", .{});
+                // checkServerIdentity already set abort_reason / aborted /
+                // result.fail and scheduled the shutdown of the parked
+                // socket; all that is left is rejecting the promise.
+                const promise_value = this.promise.valueOrEmpty();
+                if (promise_value.isEmptyOrUndefinedOrNull()) {
+                    log("onProgressUpdate: promise_value is null", .{});
+                    this.promise.deinit();
+                    return;
+                }
+                // we need to abort the request
+                const promise = promise_value.asAnyPromise().?;
+                const tracker = this.tracker;
+                var result = this.onReject();
+                defer result.deinit();
+
+                promise_value.ensureStillAlive();
+                try promise.rejectWithAsyncStack(globalThis, result.toJS(globalThis));
+
+                tracker.didDispatch(globalThis);
+                this.promise.deinit();
+                return;
+            }
+            // checkServerIdentity passed: un-park the HTTP-thread connection
+            // so the request is written to the now-verified peer. If the
+            // connection already closed or failed, the resume is a no-op
+            // (it is keyed through the abort tracker).
+            if (this.http) |http_| http.http_thread.scheduleCertCheckResume(http_);
+            // Fall through. The common case (certificate-only update) returns
+            // at the metadata-less early return below. When the connection
+            // failed after the handshake but before response headers arrived
+            // (e.g. an mTLS server closing the socket because the client
+            // didn't present a certificate), the certificate_info from the
+            // first progress update is coalesced into the later failure
+            // result and we fall through to the reject logic with
+            // `result.fail` set.
+        }
+
         if (this.metadata == null and this.result.isSuccess()) return;
 
         // if we abort because of cert error
@@ -530,39 +590,6 @@ pub const FetchTasklet = struct {
             log("onProgressUpdate: promise_value is null", .{});
             this.promise.deinit();
             return;
-        }
-
-        if (this.result.certificate_info) |certificate_info| {
-            this.result.certificate_info = null;
-            defer certificate_info.deinit(bun.default_allocator);
-
-            // we receive some error
-            if (this.reject_unauthorized and !this.checkServerIdentity(certificate_info)) {
-                log("onProgressUpdate: aborted due certError", .{});
-                // we need to abort the request
-                const promise = promise_value.asAnyPromise().?;
-                const tracker = this.tracker;
-                var result = this.onReject();
-                defer result.deinit();
-
-                promise_value.ensureStillAlive();
-                try promise.rejectWithAsyncStack(globalThis, result.toJS(globalThis));
-
-                tracker.didDispatch(globalThis);
-                this.promise.deinit();
-                return;
-            }
-            // checkServerIdentity passed. Fall through to resolve/reject below.
-            //
-            // We can reach this point with `metadata == null` when the
-            // connection failed after the TLS handshake but before response
-            // headers arrived (e.g. an mTLS server closing the socket because
-            // the client didn't present a certificate) — the certificate_info
-            // from the first progress update is coalesced into the later
-            // failure result. The `metadata == null && isSuccess()` case is
-            // already handled by the early return above, so the fall-through
-            // here always has either metadata to resolve with or a failure to
-            // reject with.
         }
 
         const tracker = this.tracker;

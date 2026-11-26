@@ -27,6 +27,9 @@ hostname: []const u8,
 port: u16,
 ssl_config: ?SSLConfig.SharedPtr,
 did_have_handshaking_error: bool,
+/// zun TLS-ID-1: how the peer was authenticated when the session's socket
+/// was opened; only requests it satisfies may join or reuse it.
+verification: HTTPClient.PeerVerification,
 
 /// Queued bytes for the socket; whole frames are written here and
 /// `flush()` drains as much as the socket accepts.
@@ -103,6 +106,7 @@ pub fn create(ctx: *NewHTTPContext(true), socket: Socket, client: *const HTTPCli
         .port = client.connected_url.getPortAuto(),
         .ssl_config = if (client.tls_props) |p| p.clone() else null,
         .did_have_handshaking_error = client.flags.did_have_handshaking_error,
+        .verification = client.pooledSocketVerification(),
     });
     _ = H2.live_sessions.fetchAdd(1, .monotonic);
     ctx.registerH2(this);
@@ -134,8 +138,8 @@ pub fn hasHeadroom(this: *const ClientSession) bool {
         this.next_stream_id < wire.MAX_STREAM_ID;
 }
 
-pub fn matches(this: *const ClientSession, hostname: []const u8, port: u16, ssl_config: ?*SSLConfig) bool {
-    return this.port == port and SSLConfig.rawPtr(this.ssl_config) == ssl_config and strings.eqlLong(this.hostname, hostname, true);
+pub fn matches(this: *const ClientSession, hostname: []const u8, port: u16, ssl_config: ?*SSLConfig, required: HTTPClient.PeerVerification) bool {
+    return required.admits(this.verification) and this.port == port and SSLConfig.rawPtr(this.ssl_config) == ssl_config and strings.eqlLong(this.hostname, hostname, true);
 }
 
 pub fn adopt(this: *ClientSession, client: *HTTPClient) void {
@@ -605,6 +609,7 @@ fn maybeRelease(this: *ClientSession) void {
         this.ctx.releaseSocket(
             this.socket,
             this.did_have_handshaking_error,
+            this.verification,
             this.hostname,
             this.port,
             this.ssl_config,

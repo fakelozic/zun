@@ -7,10 +7,13 @@ pub const new = bun.TrivialNew(@This());
 hostname: []const u8,
 port: u16,
 ssl_config: ?*SSLConfig,
+/// zun TLS-ID-1: how the leader's handshake authenticates the peer; only
+/// requests it satisfies may coalesce onto it.
+verification: bun.http.PeerVerification,
 waiters: std.ArrayListUnmanaged(*HTTPClient) = .empty,
 
-pub fn matches(this: *const @This(), hostname: []const u8, port: u16, ssl_config: ?*SSLConfig) bool {
-    return this.port == port and this.ssl_config == ssl_config and strings.eqlLong(this.hostname, hostname, true);
+pub fn matches(this: *const @This(), hostname: []const u8, port: u16, ssl_config: ?*SSLConfig, required: bun.http.PeerVerification) bool {
+    return required.admits(this.verification) and this.port == port and this.ssl_config == ssl_config and strings.eqlLong(this.hostname, hostname, true);
 }
 
 pub fn unregisterFrom(this: *@This(), ctx: *NewHTTPContext(true)) void {

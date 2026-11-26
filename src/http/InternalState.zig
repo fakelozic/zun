@@ -42,7 +42,15 @@ pub const InternalStateFlags = packed struct(u8) {
     is_redirect_pending: bool = false,
     is_libdeflate_fast_path_disabled: bool = false,
     resend_request_body_on_redirect: bool = false,
-    _padding: u2 = 0,
+    /// zun TLS-ID-1: the TLS handshake finished but the JS `checkServerIdentity`
+    /// callback has not approved the peer certificate yet. While set,
+    /// `onWritable` writes no application data and `onData` treats incoming
+    /// application data as unexpected. Cleared by
+    /// `HTTPClient.resumeAfterCertCheck` once the JS thread reports the check
+    /// passed, and by `reset()` on every redirect hop or failure, so each hop
+    /// parks again on its own. Same as Bun 1.4.5 `is_waiting_for_cert_check`.
+    is_waiting_for_cert_check: bool = false,
+    _padding: u1 = 0,
 };
 
 pub fn init(body: HTTPRequestBody, body_out_str: *MutableString) InternalState {

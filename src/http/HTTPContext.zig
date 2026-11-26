@@ -8,6 +8,13 @@ pub fn NewHTTPContext(comptime ssl: bool) type {
             port: u16 = 0,
             /// If you set `rejectUnauthorized` to `false`, the connection fails to verify,
             did_have_handshaking_error_while_reject_unauthorized_is_false: bool = false,
+            /// zun TLS-ID-1: how the peer of this socket was authenticated. A
+            /// CA-valid but wrong-hostname cert leaves
+            /// `did_have_handshaking_error` false, and a JS
+            /// `checkServerIdentity` verdict is per connection, so this is
+            /// what keeps a request off a socket whose identity was checked
+            /// some other way (`HTTPClient.PeerVerification.admits`).
+            verification: HTTPClient.PeerVerification = .none,
             /// The interned SSLConfig this socket was created with (null = default context).
             /// Owns a strong ref while the socket is in the keepalive pool.
             ssl_config: ?SSLConfig.SharedPtr = null,
@@ -288,6 +295,7 @@ pub fn NewHTTPContext(comptime ssl: bool) type {
             this: *@This(),
             socket: HTTPSocket,
             did_have_handshaking_error_while_reject_unauthorized_is_false: bool,
+            verification: HTTPClient.PeerVerification,
             hostname: []const u8,
             port: u16,
             ssl_config: ?SSLConfig.SharedPtr,
@@ -321,6 +329,7 @@ pub fn NewHTTPContext(comptime ssl: bool) type {
 
                     pending.http_socket = socket;
                     pending.did_have_handshaking_error_while_reject_unauthorized_is_false = did_have_handshaking_error_while_reject_unauthorized_is_false;
+                    pending.verification = verification;
                     @memcpy(pending.hostname_buf[0..hostname.len], hostname);
                     pending.hostname_len = @as(u8, @truncate(hostname.len));
                     pending.port = port;
@@ -619,11 +628,18 @@ pub fn NewHTTPContext(comptime ssl: bool) type {
             tunnel: ?*ProxyTunnel,
             /// Non-null if the socket negotiated "h2"; ownership transferred.
             h2_session: ?*H2.ClientSession,
+            /// How the pooled socket's peer was authenticated.
+            verification: HTTPClient.PeerVerification,
         };
 
         fn existingSocket(
             this: *@This(),
             reject_unauthorized: bool,
+            /// zun TLS-ID-1: what the caller requires of the outer socket's
+            /// peer and of a tunnelled origin (`client.socketVerification()`
+            /// / `client.targetVerification()`).
+            required_for_socket: HTTPClient.PeerVerification,
+            required_for_target: HTTPClient.PeerVerification,
             hostname: []const u8,
             port: u16,
             ssl_config: ?*SSLConfig,
@@ -684,6 +700,22 @@ pub fn NewHTTPContext(comptime ssl: bool) type {
                     if (reject_unauthorized and !socket.proxy_tunnel.?.data.established_with_reject_unauthorized) {
                         continue;
                     }
+                    // zun TLS-ID-1: the origin behind the tunnel must have
+                    // been authenticated the way this request requires.
+                    if (!required_for_target.admits(socket.proxy_tunnel.?.data.verification)) {
+                        continue;
+                    }
+                }
+
+                // zun TLS-ID-1 (review F-4): a request with a JS
+                // `checkServerIdentity` must not take a socket verified
+                // natively (its callback would never run), and a strict
+                // request must not take one whose identity only a callback
+                // (or nothing) approved. Bun 1.4.5 `PeerVerification::admits`.
+                if (comptime ssl) {
+                    if (!required_for_socket.admits(socket.verification)) {
+                        continue;
+                    }
                 }
 
                 if (strings.eqlLong(socket.hostname_buf[0..socket.hostname_len], hostname, true)) {
@@ -711,9 +743,10 @@ pub fn NewHTTPContext(comptime ssl: bool) type {
                     }
                     const h2_session = socket.h2_session;
                     socket.h2_session = null;
+                    const verification = socket.verification;
                     assert(this.pending_sockets.put(socket));
                     log("+ Keep-Alive reuse {s}:{d}{s}", .{ hostname, port, if (tunnel != null) " (with tunnel)" else "" });
-                    return .{ .socket = http_socket, .tunnel = tunnel, .h2_session = h2_session };
+                    return .{ .socket = http_socket, .tunnel = tunnel, .h2_session = h2_session, .verification = verification };
                 }
             }
 
@@ -746,13 +779,13 @@ pub fn NewHTTPContext(comptime ssl: bool) type {
             if (comptime ssl) {
                 if (client.canOfferH2()) {
                     for (this.active_h2_sessions.items) |session| {
-                        if (session.hasHeadroom() and session.matches(hostname, port, SSLConfig.rawPtr(client.tls_props))) {
+                        if (session.hasHeadroom() and session.matches(hostname, port, SSLConfig.rawPtr(client.tls_props), client.socketVerification())) {
                             session.adopt(client);
                             return null;
                         }
                     }
                     for (this.pending_h2_connects.items) |pc| {
-                        if (pc.matches(hostname, port, SSLConfig.rawPtr(client.tls_props))) {
+                        if (pc.matches(hostname, port, SSLConfig.rawPtr(client.tls_props), client.socketVerification())) {
                             bun.handleOom(pc.waiters.append(bun.default_allocator, client));
                             return null;
                         }
@@ -760,6 +793,7 @@ pub fn NewHTTPContext(comptime ssl: bool) type {
                 }
             }
 
+            client.flags.reused_socket_verification = .none;
             if (client.isKeepAlivePossible()) {
                 const want_tunnel = client.http_proxy != null and client.url.isHTTPS();
                 // CONNECT TCP target (writeProxyConnect line 346). The SNI
@@ -770,6 +804,8 @@ pub fn NewHTTPContext(comptime ssl: bool) type {
 
                 if (this.existingSocket(
                     client.flags.reject_unauthorized,
+                    client.socketVerification(),
+                    client.targetVerification(),
                     hostname,
                     port,
                     SSLConfig.rawPtr(client.tls_props),
@@ -780,6 +816,7 @@ pub fn NewHTTPContext(comptime ssl: bool) type {
                     if (comptime ssl) client.alpnOffer() else .h1,
                 )) |found| {
                     const sock = found.socket;
+                    client.flags.reused_socket_verification = found.verification;
                     if (sock.ext(**anyopaque)) |ctx| {
                         ctx.* = bun.cast(**anyopaque, ActiveSocket.init(client).ptr());
                     }
@@ -828,6 +865,7 @@ pub fn NewHTTPContext(comptime ssl: bool) type {
                         .hostname = bun.handleOom(bun.default_allocator.dupe(u8, hostname)),
                         .port = port,
                         .ssl_config = SSLConfig.rawPtr(client.tls_props),
+                        .verification = client.socketVerification(),
                     });
                     bun.handleOom(this.pending_h2_connects.append(bun.default_allocator, pc));
                     client.pending_h2 = pc;

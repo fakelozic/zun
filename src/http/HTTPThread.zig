@@ -36,6 +36,10 @@ queued_writes: std.ArrayListUnmanaged(WriteMessage) = std.ArrayListUnmanaged(Wri
 queued_response_body_drains: std.ArrayListUnmanaged(DrainMessage) = std.ArrayListUnmanaged(DrainMessage).empty,
 
 queued_shutdowns_lock: bun.Mutex = .{},
+/// zun TLS-ID-1: requests whose JS `checkServerIdentity` approved the peer
+/// certificate; drained on the HTTP thread to un-park their connection.
+queued_cert_check_resumes: std.ArrayListUnmanaged(CertCheckResumeMessage) = .empty,
+queued_cert_check_resumes_lock: bun.Mutex = .{},
 queued_writes_lock: bun.Mutex = .{},
 queued_response_body_drains_lock: bun.Mutex = .{},
 
@@ -118,6 +122,12 @@ const DrainMessage = struct {
     async_http_id: u32,
 };
 const ShutdownMessage = struct {
+    async_http_id: u32,
+};
+
+/// The JS thread's `checkServerIdentity` callback approved the peer
+/// certificate; un-park the connection so the request is written.
+const CertCheckResumeMessage = struct {
     async_http_id: u32,
 };
 
@@ -254,9 +264,11 @@ pub fn onStart(opts: InitOpts) void {
 }
 
 pub fn connect(this: *@This(), client: *HTTPClient, comptime is_ssl: bool) !?NewHTTPContext(is_ssl).HTTPSocket {
-    if (client.unix_socket_path.length() > 0) {
-        return try this.context(is_ssl).connectSocket(client, client.unix_socket_path.slice());
-    }
+    // zun TLS-ID-1 (review F-5): a unix socket path used to be dialled here,
+    // before the custom TLS context was chosen, so `tls.ca` / `cert` / `key`
+    // were silently replaced by the shared default context. The custom
+    // context is selected first now and the unix dial goes through it.
+    const unix_path: []const u8 = if (client.unix_socket_path.length() > 0) client.unix_socket_path.slice() else "";
 
     if (comptime is_ssl) custom_ctx: {
         if (client.tls_props) |tls| {
@@ -271,6 +283,7 @@ pub fn connect(this: *@This(), client: *HTTPClient, comptime is_ssl: bool) !?New
                 // Cache hit - reuse existing SSL context
                 entry.last_used_ns = this.timer.read();
                 client.setCustomSslCtx(entry.ctx);
+                if (unix_path.len > 0) return try entry.ctx.connectSocket(client, unix_path);
                 // Keepalive is now supported for custom SSL contexts
                 if (client.http_proxy) |url| {
                     return try entry.ctx.connect(client, url.hostname, url.getPortAuto());
@@ -310,6 +323,7 @@ pub fn connect(this: *@This(), client: *HTTPClient, comptime is_ssl: bool) !?New
             }
 
             client.setCustomSslCtx(custom_context);
+            if (unix_path.len > 0) return try custom_context.connectSocket(client, unix_path);
             // Keepalive is now supported for custom SSL contexts
             if (client.http_proxy) |url| {
                 if (url.protocol.len == 0 or strings.eqlComptime(url.protocol, "https") or strings.eqlComptime(url.protocol, "http")) {
@@ -319,6 +333,9 @@ pub fn connect(this: *@This(), client: *HTTPClient, comptime is_ssl: bool) !?New
             }
             return try custom_context.connect(client, client.url.hostname, client.url.getPortAuto());
         }
+    }
+    if (unix_path.len > 0) {
+        return try this.context(is_ssl).connectSocket(client, unix_path);
     }
     if (client.http_proxy) |url| {
         if (url.href.len > 0) {
@@ -436,6 +453,44 @@ fn drainQueuedShutdowns(this: *@This()) void {
     }
 }
 
+/// zun TLS-ID-1: un-park connections whose JS `checkServerIdentity` passed.
+/// Keyed through the abort tracker like shutdowns; a request that already
+/// closed, failed or was aborted has no entry (or a dead socket) and is
+/// skipped. `resumeAfterCertCheck` ignores clients that are not parked.
+fn drainQueuedCertCheckResumes(this: *@This()) void {
+    while (true) {
+        var queued = brk: {
+            this.queued_cert_check_resumes_lock.lock();
+            defer this.queued_cert_check_resumes_lock.unlock();
+            const list = this.queued_cert_check_resumes;
+            this.queued_cert_check_resumes = .empty;
+            break :brk list;
+        };
+        defer queued.deinit(bun.default_allocator);
+
+        for (queued.items) |resume_msg| {
+            // Both arms are needed: an HTTPS origin behind a plaintext proxy
+            // parks behind a SocketTCP tracker entry.
+            if (bun.http.socket_async_http_abort_tracker.get(resume_msg.async_http_id)) |any_socket| {
+                switch (any_socket) {
+                    inline .SocketTLS, .SocketTCP => |socket, tag| {
+                        const is_tls = tag == .SocketTLS;
+                        if (socket.isClosed() or socket.isShutdown()) continue;
+                        const tagged = NewHTTPContext(comptime is_tls).getTaggedFromSocket(socket);
+                        if (tagged.get(HTTPClient)) |client| {
+                            // May reach closeAndFail → result callback, which
+                            // can free `client`; don't touch it afterwards.
+                            client.resumeAfterCertCheck(comptime is_tls, socket);
+                        }
+                    },
+                }
+            }
+        }
+        if (queued.items.len == 0) break;
+        threadlog("drained {d} queued cert check resumes", .{queued.items.len});
+    }
+}
+
 fn drainQueuedWrites(this: *@This()) void {
     while (true) {
         var queued_writes = brk: {
@@ -524,6 +579,7 @@ fn drainEvents(this: *@This()) void {
     this.drainQueuedHTTPResponseBodyDrains();
     this.drainQueuedWrites();
     this.drainQueuedShutdowns();
+    this.drainQueuedCertCheckResumes();
     bun.http.H3.PendingConnect.drainResolved();
 
     for (this.queued_threadlocal_proxy_derefs.items) |http| {
@@ -679,6 +735,21 @@ pub fn scheduleShutdown(this: *@This(), http: *AsyncHTTP) void {
         this.queued_shutdowns_lock.lock();
         defer this.queued_shutdowns_lock.unlock();
         this.queued_shutdowns.append(bun.default_allocator, .{
+            .async_http_id = http.async_http_id,
+        }) catch |err| bun.handleOom(err);
+    }
+    if (this.has_awoken.load(.monotonic))
+        this.loop.loop.wakeup();
+}
+
+/// zun TLS-ID-1: called on the JS thread once `checkServerIdentity` approved
+/// the peer certificate of a parked request.
+pub fn scheduleCertCheckResume(this: *@This(), http: *AsyncHTTP) void {
+    threadlog("scheduleCertCheckResume {d}", .{http.async_http_id});
+    {
+        this.queued_cert_check_resumes_lock.lock();
+        defer this.queued_cert_check_resumes_lock.unlock();
+        this.queued_cert_check_resumes.append(bun.default_allocator, .{
             .async_http_id = http.async_http_id,
         }) catch |err| bun.handleOom(err);
     }

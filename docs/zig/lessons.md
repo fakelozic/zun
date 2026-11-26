@@ -162,3 +162,12 @@ inside a type's `comptime {}` block a plain `for` over a tuple of `.{ "name", of
 `@offsetOf`, `@sizeOf(@FieldType(T, name))`, `@alignOf(T)` and `@typeInfo(T).@"struct".field_names.len` are all
 comptime-known. Checking only `@sizeOf` and the last offsets misses a field moving inside the prefix; check every field
 (and the count, so an added field fails too), with matching C `_Static_assert`s on the other side.
+
+## 2026-11-27: an explicit-tag enum with methods inside a packed struct
+
+Verified on 0.17.1 (probe `probes/enum-in-packed/enum-in-packed.zig`, run with `zig test`): an `enum(u2)` with decls
+(methods) can be a field of a `packed struct(u32)`. It takes exactly its tag's bits, a `= .none` default works, and you
+can call its methods on the field directly (`flags.reused.max(.callback)`), since the enum type is unchanged by being
+packed. `@enumFromInt(@max(@intFromEnum(a), @intFromEnum(b)))` gives an ordered `max` over the declared tag values.
+Used for `HTTPClient.PeerVerification` in `HTTPClient.Flags` (TLS-ID-1). **Do:** give the enum an explicit tag type
+(`enum(u2)`), so the packed struct's bit count stays fixed and the `_: uN` padding can be adjusted by hand.
