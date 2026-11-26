@@ -448,8 +448,8 @@ export function emitBun(n: Ninja, cfg: Config, sources: Sources): BunOutput {
     // depLibs explicit in the phony: deps with no provided includes (tinycc,
     // lolhtml) aren't in depHeaderSignal, so the archive doesn't pull them
     // transitively — but link-only still needs them uploaded.
-    n.phony("bun", [archive, ...depLibs, ...(depUploadStamp ? [depUploadStamp] : [])]);
-    n.default(["bun"]);
+    n.phony("zun", [archive, ...depLibs, ...(depUploadStamp ? [depUploadStamp] : [])]);
+    n.default(["zun"]);
     return { archive, deps, codegen, zigObjects, objects: allObjects };
   }
 
@@ -487,11 +487,11 @@ export function emitBun(n: Ninja, cfg: Config, sources: Sources): BunOutput {
     }
   }
 
-  // Phony `bun` target for convenience — only when strip DIDN'T produce a
-  // literal file named `bun` (which would collide with the phony). When
-  // strip runs, `ninja bun` builds the actual stripped file; no phony needed.
+  // Phony `zun` target for convenience — only when strip DIDN'T produce a
+  // literal file named `zun` (which would collide with the phony). When
+  // strip runs, `ninja zun` builds the actual stripped file; no phony needed.
   if (strippedExe === undefined) {
-    n.phony("bun", [exe]);
+    n.phony("zun", [exe]);
   }
 
   // ─── Step 9: smoke test ───
@@ -548,8 +548,8 @@ function emitZigOnly(n: Ninja, cfg: Config, sources: Sources): BunOutput {
     zstdStamp: depSourceStamp(cfg, "zstd"),
   });
 
-  n.phony("bun", zigObjects);
-  n.default(["bun"]);
+  n.phony("zun", zigObjects);
+  n.default(["zun"]);
 
   return { deps: [zstdDep], codegen, zigObjects, objects: [] };
 }
@@ -617,7 +617,7 @@ function emitLinkOnly(n: Ninja, cfg: Config): BunOutput {
     strippedExe = emitStrip(n, cfg, exe, flags.stripflags);
     if (cfg.darwin) dsym = emitDsymutil(n, cfg, exe, exeName);
   }
-  if (strippedExe === undefined) n.phony("bun", [exe]);
+  if (strippedExe === undefined) n.phony("zun", [exe]);
   emitSmokeTest(n, cfg, exe, exeName);
 
   return {
@@ -695,7 +695,7 @@ function emitSmokeTest(n: Ninja, cfg: Config, exe: string, exeName: string): voi
  * The profile binary keeps its symbols for profiling/debugging release crashes.
  */
 function emitStrip(n: Ninja, cfg: Config, inputExe: string, stripflags: string[]): string {
-  const out = resolve(cfg.buildDir, "bun" + cfg.exeSuffix);
+  const out = resolve(cfg.buildDir, "zun" + cfg.exeSuffix);
 
   // Windows: strip equivalent is handled at link time (/OPT:REF etc), no
   // separate strip binary. The "stripped" bun is just a copy.

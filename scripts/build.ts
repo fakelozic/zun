@@ -204,7 +204,7 @@ async function main(): Promise<void> {
     }
 
     // Exec the built binary. result.output.exe is the linked (unstripped)
-    // binary — bun-debug for debug, bun-profile for release. That's the one
+    // binary — zun-debug for debug, zun-profile for release. That's the one
     // you want for dev iteration (has symbols + assertions in debug).
     const exe = result.output.exe;
     if (exe === undefined) {
@@ -496,7 +496,7 @@ Options:
 
 Any bare positional and everything after is passed to the built binary:
   bun scripts/build.ts test foo.test.ts   → builds, then runs
-                                            ./build/debug/bun-debug test foo.test.ts
+                                            ./build/debug/zun-debug test foo.test.ts
 
 Examples:
   bun scripts/build.ts --profile=debug

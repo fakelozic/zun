@@ -634,12 +634,14 @@ export function resolveConfig(partial: PartialConfig, toolchain: Toolchain): Con
         : resolve(cwd, partial.buildDir)
       : resolve(cwd, "build", defaultBuildDirName);
   const codegenDir = resolve(buildDir, "codegen");
-  // Local builds share $BUN_INSTALL/build-cache across checkouts and profiles
-  // so ccache/zig/tarballs/webkit reuse one another's work. CI stays per-build
-  // so runners remain hermetic and `rm -rf build/` is a full reset.
-  // Relative BUN_INSTALL is anchored to repo root (not process.cwd()) so the
+  // Local builds share $ZUN_INSTALL/build-cache (default ~/.zun/build-cache) across
+  // checkouts and profiles so ccache/zig/tarballs/webkit reuse one another's work.
+  // CI stays per-build so runners remain hermetic and `rm -rf build/` is a full reset.
+  // zun: never ~/.bun (the real Bun's dir), and BUN_INSTALL is deliberately not read
+  // here: Bun's installer exports BUN_INSTALL=~/.bun. See docs/identity.md.
+  // Relative ZUN_INSTALL is anchored to repo root (not process.cwd()) so the
   // ninja regen rule — which runs from buildDir — resolves the same path.
-  const bunInstall = process.env.BUN_INSTALL ? resolve(cwd, process.env.BUN_INSTALL) : join(homedir(), ".bun");
+  const bunInstall = process.env.ZUN_INSTALL ? resolve(cwd, process.env.ZUN_INSTALL) : join(homedir(), ".zun");
   const cacheDir =
     partial.cacheDir !== undefined
       ? isAbsolute(partial.cacheDir)
@@ -1009,22 +1011,23 @@ function computeBuildDirName(c: { debug: boolean; release: boolean; asan: boolea
 /**
  * Name of the output executable (no suffix).
  *
- * Debug builds: bun-debug. Release with ASAN: bun-asan. Etc.
- * The plain `bun` name (without -profile) only exists post-strip.
+ * zun: debug builds produce zun-debug, release with ASAN zun-asan, etc.
+ * The plain `zun` name (without -profile) only exists post-strip. Internal
+ * artifacts (bun-zig.o, libbun-*.a) keep Bun's names. See docs/identity.md.
  *
  * Lives here (not bun.ts) so flags.ts can use it for linker-map filename
  * without a circular import.
  */
 export function bunExeName(cfg: Config): string {
-  if (cfg.debug) return "bun-debug";
+  if (cfg.debug) return "zun-debug";
   // Release variants — suffix encodes which features differ from plain release.
   // First match wins.
-  if (cfg.asan && cfg.valgrind) return "bun-asan-valgrind";
-  if (cfg.asan) return "bun-asan";
-  if (cfg.valgrind) return "bun-valgrind";
-  if (cfg.assertions) return "bun-assertions";
-  // Plain release: called bun-profile (the stripped one is `bun`).
-  return "bun-profile";
+  if (cfg.asan && cfg.valgrind) return "zun-asan-valgrind";
+  if (cfg.asan) return "zun-asan";
+  if (cfg.valgrind) return "zun-valgrind";
+  if (cfg.assertions) return "zun-assertions";
+  // Plain release: called zun-profile (the stripped one is `zun`).
+  return "zun-profile";
 }
 
 /**

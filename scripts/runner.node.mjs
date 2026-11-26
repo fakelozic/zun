@@ -96,10 +96,10 @@ const { values: options, positionals: filters } = parseArgs({
       type: "boolean",
       default: false,
     },
-    /** Path to bun binary */
+    /** Path to the binary under test. zun: defaults to `zun` on PATH, never the real `bun`. */
     ["exec-path"]: {
       type: "string",
-      default: "bun",
+      default: "zun",
     },
     ["step"]: {
       type: "string",
@@ -372,7 +372,7 @@ const shouldValidateLeakSan = test => {
 function getTestModifiers(testPath) {
   const ext = extname(testPath);
   const filename = basename(testPath, ext);
-  const modifiers = filename.split("-").filter(value => value !== "bun");
+  const modifiers = filename.split("-").filter(value => value !== "bun" && value !== "zun");
 
   const os = getOs();
   const arch = getArch();
