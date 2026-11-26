@@ -49,7 +49,7 @@ Details: `docs/build.md`, `docs/status/baseline.md`.
 4. Write down the build steps that worked in `docs/build.md`.
 - **Checkpoint:** a green 0.16 baseline, and we understand the build pipeline (codegen → zig obj → C++ → link).
 
-## Phase 2: Zig 0.17 port (done, awaiting checkpoint review, 2026-11-26)
+## Phase 2: Zig 0.17 port ✅ (2026-11-26, T2; independently re-verified: clean rebuild from `4444d08` in 73 s, 6/6 tests, codemod 40/40 tests and idempotent on `src`, all probes pass)
 
 Done: static-import crash fixed and QuickJS/V8 dropped on 0.16 first (Part A); then build files, codemod
 (`scripts/fix_zig017.ts`, idempotent, tested), hand fixes and the `@hasDecl`/`@bitCast` audit (no silent changes found).
