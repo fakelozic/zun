@@ -433,7 +433,8 @@ pub fn fromJS(
         const PORT_ENV = .{ "BUN_PORT", "PORT", "NODE_PORT" };
 
         inline for (PORT_ENV) |PORT| {
-            if (env.get(PORT)) |port| {
+            // zun: ZUN_PORT is read before BUN_PORT (docs/identity.md).
+            if (env.getZunOrBun(PORT)) |port| {
                 if (std.fmt.parseInt(u16, port, 10)) |_port| {
                     break :brk _port;
                 } else |_| {}

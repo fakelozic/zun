@@ -63,6 +63,9 @@ pub const codegen_embed = build_options.codegen_embed;
 
 pub const version: std.SemanticVersion = build_options.version;
 pub const version_string = std.fmt.comptimePrint("{d}.{d}.{d}", .{ version.major, version.minor, version.patch });
+/// zun's own version, e.g. "0.1.0" (`process.versions.zun`). `version` above is the
+/// Bun version zun is compatible with (`Bun.version`, `process.versions.bun`).
+pub const zun_version_string: [:0]const u8 = build_options.zun_version;
 
 pub inline fn onlyMac() void {
     if (comptime !isMac) {

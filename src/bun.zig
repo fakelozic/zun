@@ -8,6 +8,8 @@ const bun = @This();
 
 pub const Environment = @import("./bun_core/env.zig");
 pub const env_var = @import("./bun_core/env_var.zig");
+/// zun identity: env prefix fallback, default dirs, config names (`docs/identity.md`).
+pub const zun = @import("./bun_core/zun.zig");
 pub const feature_flag = env_var.feature_flag;
 
 pub const use_mimalloc = @import("build_options").use_mimalloc;
@@ -921,6 +923,16 @@ pub fn openDirAbsoluteNotForDeletingOrRenaming(path_: []const u8) !std.fs.Dir {
 /// This wrapper exists to avoid the call to sliceTo(0)
 /// Zig's sliceTo(0) is scalar
 pub fn getenvZAnyCase(key: [:0]const u8) ?[]const u8 {
+    // zun: `BUN_X` reads `ZUN_X` first (docs/identity.md).
+    var zun_key_buf: [256]u8 = undefined;
+    if (zun.identity.zunKeyFor(key, &zun_key_buf)) |zun_key| {
+        if (getenvZAnyCaseRaw(zun_key)) |value| return value;
+    }
+    return getenvZAnyCaseRaw(key);
+}
+
+/// `getenvZAnyCase` without the `ZUN_` → `BUN_` fallback.
+pub fn getenvZAnyCaseRaw(key: [:0]const u8) ?[]const u8 {
     var env_index: usize = 0;
     while (std.c.environ[env_index]) |lineZ| : (env_index += 1) {
         const line = sliceTo(lineZ, 0);
@@ -938,13 +950,26 @@ pub fn getenvZAnyCase(key: [:0]const u8) ?[]const u8 {
 /// TODO(markovejnovic): Sunset this function when its last usage is removed.
 /// This wrapper exists to avoid the call to sliceTo(0)
 /// Zig's sliceTo(0) is scalar
+///
+/// zun: for a `BUN_X` key, a set `ZUN_X` wins (even when empty); `BUN_X` is the
+/// fallback. Every `bun.env_var.BUN_*` accessor goes through here. See
+/// `docs/identity.md`; use `getenvZRaw` to read one exact name.
 pub fn getenvZ(key: [:0]const u8) ?[]const u8 {
+    var zun_key_buf: [256]u8 = undefined;
+    if (zun.identity.zunKeyFor(key, &zun_key_buf)) |zun_key| {
+        if (getenvZRaw(zun_key)) |value| return value;
+    }
+    return getenvZRaw(key);
+}
+
+/// `getenvZ` without the `ZUN_` → `BUN_` fallback.
+pub fn getenvZRaw(key: [:0]const u8) ?[]const u8 {
     if (comptime !Environment.isNative) {
         return null;
     }
 
     if (comptime Environment.isWindows) {
-        return getenvZAnyCase(key);
+        return getenvZAnyCaseRaw(key);
     }
 
     const pointer = std.c.getenv(key.ptr) orelse return null;

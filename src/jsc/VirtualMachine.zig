@@ -310,7 +310,7 @@ pub fn onSubprocessExit(this: *VirtualMachine, process: *bun.spawn.Process) void
 
 pub fn getVerboseFetch(this: *VirtualMachine) bun.http.HTTPVerboseLevel {
     return this.default_verbose_fetch orelse {
-        if (this.transpiler.env.get("BUN_CONFIG_VERBOSE_FETCH")) |verbose_fetch| {
+        if (this.transpiler.env.getZunOrBun("BUN_CONFIG_VERBOSE_FETCH")) |verbose_fetch| {
             if (strings.eqlComptime(verbose_fetch, "true") or strings.eqlComptime(verbose_fetch, "1")) {
                 this.default_verbose_fetch = .headers;
                 return .headers;
@@ -501,7 +501,7 @@ pub fn loadExtraEnvAndSourceCodePrinter(this: *VirtualMachine) void {
 
     ensureSourceCodePrinter(this);
 
-    if (map.get("BUN_SHOW_BUN_STACKFRAMES") != null) {
+    if (map.getZunOrBun("BUN_SHOW_BUN_STACKFRAMES") != null) {
         this.hide_bun_stackframes = false;
     }
 
@@ -529,16 +529,16 @@ pub fn loadExtraEnvAndSourceCodePrinter(this: *VirtualMachine) void {
         this.transpiler.resolver.opts.preserve_symlinks = bun.strings.eqlComptime(value, "1");
     }
 
-    if (map.get("BUN_GARBAGE_COLLECTOR_LEVEL")) |gc_level| {
+    if (map.getZunOrBun("BUN_GARBAGE_COLLECTOR_LEVEL")) |gc_level| {
         // Reuse this flag for other things to avoid unnecessary hashtable
         // lookups on start for obscure flags which we do not want others to
         // depend on.
-        if (map.get("BUN_FEATURE_FLAG_FORCE_WAITER_THREAD") != null) {
+        if (map.getZunOrBun("BUN_FEATURE_FLAG_FORCE_WAITER_THREAD") != null) {
             bun.spawn.process.WaiterThread.setShouldUseWaiterThread();
         }
 
         // Only allowed for testing
-        if (map.get("BUN_FEATURE_FLAG_INTERNAL_FOR_TESTING") != null) {
+        if (map.getZunOrBun("BUN_FEATURE_FLAG_INTERNAL_FOR_TESTING") != null) {
             ModuleLoader.is_allowed_to_use_internal_testing_apis = true;
         }
 
@@ -550,7 +550,7 @@ pub fn loadExtraEnvAndSourceCodePrinter(this: *VirtualMachine) void {
             has_bun_garbage_collector_flag_enabled = true;
         }
 
-        if (map.get("BUN_FEATURE_FLAG_SYNTHETIC_MEMORY_LIMIT")) |value| {
+        if (map.getZunOrBun("BUN_FEATURE_FLAG_SYNTHETIC_MEMORY_LIMIT")) |value| {
             const limit = std.fmt.parseInt(usize, value, 10) catch {
                 Output.panic("BUN_FEATURE_FLAG_SYNTHETIC_MEMORY_LIMIT must be a positive integer", .{});
             };

@@ -35,6 +35,7 @@ pub fn build(b: *std.Build) void {
     opts.addOption(u32, "canary_revision", 0);
     opts.addOption(bool, "is_canary", false);
     opts.addOption(std.SemanticVersion, "version", .{ .major = 1, .minor = 3, .patch = 14 });
+    opts.addOption([:0]const u8, "zun_version", "0.0.0"); // placeholder; real value: build.zig `zun_version`
     opts.addOption([:0]const u8, "sha", "0000000000000000000000000000000000000000");
     opts.addOption(bool, "baseline", false);
     opts.addOption(bool, "enable_logs", false);

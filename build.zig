@@ -16,6 +16,9 @@ pub fn build(b: *std.Build) void {
     const codegen_embed = b.option(bool, "codegen_embed", "Embed generated code") orelse false;
     const canary_revision = b.option(u32, "canary", "Canary revision") orelse 0;
     const version_text = b.option([]const u8, "version", "Bun version") orelse "1.3.14";
+    // zun's own version (process.versions.zun, `zun --version`). This default is the
+    // single source of truth; `Bun.version` / process.versions.bun stay at `version`.
+    const zun_version_text = b.option([]const u8, "zun_version", "zun version") orelse "0.1.0";
     const sha = b.option([]const u8, "sha", "Git revision") orelse "0000000000000000000000000000000000000000";
     const baseline = b.option(bool, "baseline", "Target the x64 baseline CPU") orelse false;
     const enable_logs = b.option(bool, "enable_logs", "Enable logs") orelse false;
@@ -40,6 +43,8 @@ pub fn build(b: *std.Build) void {
     opts.addOption(u32, "canary_revision", canary_revision);
     opts.addOption(bool, "is_canary", canary_revision != 0);
     opts.addOption(std.SemanticVersion, "version", std.SemanticVersion.parse(version_text) catch @panic("invalid -Dversion"));
+    _ = std.SemanticVersion.parse(zun_version_text) catch @panic("invalid -Dzun_version");
+    opts.addOption([:0]const u8, "zun_version", b.allocator.dupeSentinel(u8, zun_version_text, 0) catch @panic("OOM"));
     opts.addOption([:0]const u8, "sha", b.allocator.dupeSentinel(u8, sha, 0) catch @panic("OOM"));
     opts.addOption(bool, "baseline", baseline);
     opts.addOption(bool, "enable_logs", enable_logs);

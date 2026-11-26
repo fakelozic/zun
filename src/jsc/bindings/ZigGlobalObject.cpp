@@ -321,17 +321,21 @@ extern "C" void JSCInitialize(const char* envp[], size_t envc, void (*onCrash)(c
 #endif
 
             if (envc > 0) [[likely]] {
-                auto envc_copy = envc;
-                while (envc_copy--) {
-                    const char* env = (const char*)envp[envc_copy];
-                    // need to check for \0 so we might as well make this single pass
-                    // strlen would check the end of the string
-                    if (!(env[0] == 'B' && env[1] == 'U' && env[2] == 'N' && env[3] == '_' && env[4] == 'J' && env[5] == 'S' && env[6] == 'C' && env[7] == '_')) [[likely]] {
-                        continue;
-                    }
+                // zun: BUN_JSC_<opt> first, then ZUN_JSC_<opt>, so a ZUN_JSC_ value
+                // overrides the BUN_JSC_ one for the same option (docs/identity.md).
+                for (char first : { 'B', 'Z' }) {
+                    auto envc_copy = envc;
+                    while (envc_copy--) {
+                        const char* env = (const char*)envp[envc_copy];
+                        // need to check for \0 so we might as well make this single pass
+                        // strlen would check the end of the string
+                        if (!(env[0] == first && env[1] == 'U' && env[2] == 'N' && env[3] == '_' && env[4] == 'J' && env[5] == 'S' && env[6] == 'C' && env[7] == '_')) [[likely]] {
+                            continue;
+                        }
 
-                    if (!JSC::Options::setOption(env + 8)) [[unlikely]] {
-                        onCrash(env, strlen(env));
+                        if (!JSC::Options::setOption(env + 8)) [[unlikely]] {
+                            onCrash(env, strlen(env));
+                        }
                     }
                 }
             }
@@ -441,7 +445,9 @@ extern "C" JSC::JSGlobalObject* Zig__GlobalObject__create(void* console_client, 
     JSC::JSLockHolder locker(vm);
 
     {
-        const char* disable_stop_if_necessary_timer = getenv("BUN_DISABLE_STOP_IF_NECESSARY_TIMER");
+        const char* disable_stop_if_necessary_timer = getenv("ZUN_DISABLE_STOP_IF_NECESSARY_TIMER");
+        if (!disable_stop_if_necessary_timer)
+            disable_stop_if_necessary_timer = getenv("BUN_DISABLE_STOP_IF_NECESSARY_TIMER");
         // Keep stopIfNecessaryTimer enabled by default when either:
         // - `--smol` is passed
         // - The machine has less than 4GB of RAM

@@ -32,19 +32,19 @@ pub const Loader = struct {
     }
 
     pub fn has(this: *const Loader, input: []const u8) bool {
-        const value = this.get(input) orelse return false;
+        const value = this.getZunOrBun(input) orelse return false;
         if (value.len == 0) return false;
 
         return !strings.eqlComptime(value, "\"\"") and !strings.eqlComptime(value, "''") and !strings.eqlComptime(value, "0") and !strings.eqlComptime(value, "false");
     }
 
     pub fn isProduction(this: *const Loader) bool {
-        const env = this.get("BUN_ENV") orelse this.get("NODE_ENV") orelse return false;
+        const env = this.getZunOrBun("BUN_ENV") orelse this.get("NODE_ENV") orelse return false;
         return strings.eqlComptime(env, "production");
     }
 
     pub fn isTest(this: *const Loader) bool {
-        const env = this.get("BUN_ENV") orelse this.get("NODE_ENV") orelse return false;
+        const env = this.getZunOrBun("BUN_ENV") orelse this.get("NODE_ENV") orelse return false;
         return strings.eqlComptime(env, "test");
     }
 
@@ -348,7 +348,7 @@ pub const Loader = struct {
     }
 
     pub fn getAs(this: *const Loader, comptime T: type, key: string) ?T {
-        const value = this.get(key) orelse return null;
+        const value = this.getZunOrBun(key) orelse return null;
         switch (comptime T) {
             bool => {
                 if (strings.eqlComptime(value, "")) return false;
@@ -378,6 +378,16 @@ pub const Loader = struct {
         if (_key.len == 0) return null;
 
         return this.map.get(_key);
+    }
+
+    /// Like `get`, but for a `BUN_X` key a set `ZUN_X` wins (docs/identity.md).
+    /// For zun's own reads of its settings. `get` stays exact because it also
+    /// backs JS `process.env` / `Bun.env`, which must report what is really set.
+    pub fn getZunOrBun(this: *const Loader, key: string) ?string {
+        var _key = key;
+        if (_key.len > 0 and _key[0] == '$') _key = key[1..];
+        if (_key.len == 0) return null;
+        return this.map.getZunOrBun(_key);
     }
 
     pub fn getAuto(this: *const Loader, key: string) string {
@@ -1355,6 +1365,15 @@ pub const Map = struct {
         key: string,
     ) ?string {
         return if (this.map.get(key)) |entry| entry.value else null;
+    }
+
+    /// `get`, except that for a `BUN_X` key a set `ZUN_X` wins (docs/identity.md).
+    pub fn getZunOrBun(this: *const Map, key: string) ?string {
+        var zun_key_buf: [256]u8 = undefined;
+        if (bun.zun.identity.zunKeyFor(key, &zun_key_buf)) |zun_key| {
+            if (this.get(zun_key)) |value| return value;
+        }
+        return this.get(key);
     }
 
     pub inline fn putDefault(this: *Map, key: string, value: string) OOM!void {

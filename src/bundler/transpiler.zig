@@ -303,7 +303,7 @@ pub const Transpiler = struct {
             else => {},
         }
 
-        if (strings.eqlComptime(this.env.get("BUN_DISABLE_TRANSPILER") orelse "0", "1")) {
+        if (strings.eqlComptime(this.env.getZunOrBun("BUN_DISABLE_TRANSPILER") orelse "0", "1")) {
             this.options.disable_transpilation = true;
         }
     }
