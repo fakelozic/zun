@@ -384,16 +384,16 @@ pub fn onClose(
     }
     if (in_progress) {
         if (client.state.isChunkedEncoding()) {
-            switch (client.state.chunked_decoder._state) {
-                .CHUNKED_IN_TRAILERS_LINE_HEAD, .CHUNKED_IN_TRAILERS_LINE_MIDDLE => {
-                    // ignore failure if we are in the middle of trailer headers, since we processed all the chunks and trailers are ignored
-                    client.state.flags.received_last_chunk = true;
-                    client.progressUpdate(comptime is_ssl, client.getSslCtx(is_ssl), socket);
-                    return;
-                },
-                // here we are in the middle of a chunk so ECONNRESET is expected
-                else => {},
+            // zun (security H1): ask the decoder instead of matching its private `_state` numbers, which
+            // picohttpparser renumbered (the old TRAILERS_LINE_HEAD value now means "mid chunk data",
+            // which would have reported a truncated body as complete).
+            if (picohttp.phr_decode_chunked_is_in_trailers(&client.state.chunked_decoder) != 0) {
+                // ignore failure if we are in the middle of trailer headers, since we processed all the chunks and trailers are ignored
+                client.state.flags.received_last_chunk = true;
+                client.progressUpdate(comptime is_ssl, client.getSslCtx(is_ssl), socket);
+                return;
             }
+            // otherwise we are in the middle of a chunk, so ECONNRESET is expected
         } else if (client.state.content_length == null and client.state.response_stage == .body) {
             // no content length informed so we are done here
             client.state.flags.received_last_chunk = true;

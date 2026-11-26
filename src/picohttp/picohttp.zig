@@ -372,6 +372,7 @@ pub const phr_parse_response = c.phr_parse_response;
 pub const phr_parse_headers = c.phr_parse_headers;
 pub const phr_decode_chunked = c.phr_decode_chunked;
 pub const phr_decode_chunked_is_in_data = c.phr_decode_chunked_is_in_data;
+pub const phr_decode_chunked_is_in_trailers = c.phr_decode_chunked_is_in_trailers;
 
 const string = []const u8;
 

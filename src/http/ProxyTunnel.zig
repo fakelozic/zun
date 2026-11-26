@@ -237,15 +237,13 @@ fn onClose(this: *HTTPClient) void {
         const in_progress = this.state.stage != .done and this.state.stage != .fail and this.state.flags.is_redirect_pending == false;
         if (in_progress) {
             if (this.state.isChunkedEncoding()) {
-                switch (this.state.chunked_decoder._state) {
-                    .CHUNKED_IN_TRAILERS_LINE_HEAD, .CHUNKED_IN_TRAILERS_LINE_MIDDLE => {
-                        this.state.flags.received_last_chunk = true;
-                        progressUpdateForProxySocket(this, proxy);
-                        // Drop our temporary ref asynchronously to avoid freeing within callback
-                        bun.http.http_thread.scheduleProxyDeref(proxy);
-                        return;
-                    },
-                    else => {},
+                // zun (security H1): see HTTPClient.onClose; don't read the decoder's private `_state`.
+                if (bun.picohttp.phr_decode_chunked_is_in_trailers(&this.state.chunked_decoder) != 0) {
+                    this.state.flags.received_last_chunk = true;
+                    progressUpdateForProxySocket(this, proxy);
+                    // Drop our temporary ref asynchronously to avoid freeing within callback
+                    bun.http.http_thread.scheduleProxyDeref(proxy);
+                    return;
                 }
             } else if (this.state.content_length == null and this.state.response_stage == .body) {
                 this.state.flags.received_last_chunk = true;
