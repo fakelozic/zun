@@ -31,8 +31,10 @@
 //        SKIPPED   test/expectations.txt marks it SKIP for this platform (LINUX/X64/ASAN).
 //   3. Runs negative/positive controls (a CJS and an ESM file that must fail, and two that must pass) through
 //      the same spawn path. If a "must fail" control exits 0, passes of that module kind are UNRELIABLE.
-//   4. Runs the RUNNABLE ones with a bounded pool and records PASS / UNRELIABLE / FAIL / TIMEOUT / CRASH
-//      (exit status decides, like runner.node.mjs), plus a crash kind, a failure signature and a coarse cause.
+//   4. Runs the RUNNABLE ones with a bounded pool and records PASS / UNRELIABLE / FAIL / TIMEOUT / CRASH /
+//      SANITIZER, plus a crash kind, a failure signature and a coarse cause. Exit status decides, like
+//      runner.node.mjs, with one deliberate exception (zun policy, triage TQ-6): a run that exited 0 but
+//      printed an ASAN / UBSan / LSan report is SANITIZER, which counts as a failure (see sanitizerKindOf).
 //
 // The environment matches runner.node.mjs spawnBun() for node tests, with three deliberate differences so
 // the harness can never touch the owner's real Bun install: HOME/XDG dirs point at a throwaway dir, a
@@ -320,8 +322,12 @@ const filters = (args.filter ?? []).map(f => {
 
 // UNRELIABLE = the test exited 0, but the negative control for its module kind (CJS/ESM) also exited 0,
 // so a pass cannot be told apart from a swallowed failure (see runControls).
-type Status = "PASS" | "UNRELIABLE" | "FAIL" | "TIMEOUT" | "CRASH" | "BLOCKED" | "SKIPPED" | "NOT_RUN";
-const RAN: Status[] = ["PASS", "UNRELIABLE", "FAIL", "TIMEOUT", "CRASH"];
+// SANITIZER = the test exited 0 but printed an ASAN/UBSan/LSan report. Bun's runner counts that as a pass;
+// zun's gates count it as a failure (a memory-safety report is a bug even when the process survives it).
+// A run that printed a report *and* exited non-zero stays CRASH (crash kind asan/ubsan/leak/asan-check).
+type Status = "PASS" | "UNRELIABLE" | "FAIL" | "TIMEOUT" | "CRASH" | "SANITIZER" | "BLOCKED" | "SKIPPED" | "NOT_RUN";
+const RAN: Status[] = ["PASS", "UNRELIABLE", "FAIL", "TIMEOUT", "CRASH", "SANITIZER"];
+const isOk = (s: Status) => s === "PASS" || s === "UNRELIABLE";
 type Entry = {
   path: string; // relative to repo, e.g. test/js/node/test/parallel/test-fs-stat.js
   area: string;
@@ -335,7 +341,9 @@ type Entry = {
   exitCode?: number | null;
   signal?: string | null;
   crashKind?: string;
-  sanitizerNote?: string;
+  // a non-sanitizer crash report (panic, JSC assertion, exception-check) in a run that still exited 0,
+  // usually a child process's output that the test printed; kept as a note, the test still passes
+  reportNote?: string;
   signature?: string;
   cause?: string;
   output?: string;
@@ -432,6 +440,25 @@ function crashKindOf(out: string, signal: string | null, exitCode: number | null
   return undefined;
 }
 
+// Strict sanitizer-report markers, used for the SANITIZER status of exit-0 runs. These are the header /
+// summary lines the sanitizer runtimes print themselves (compiler-rt sanitizer_common, asan_report.cpp,
+// ubsan_diag.cpp), anchored to the start of a line so a test that merely mentions "runtime error" in its
+// own output is not flagged:
+//   ==<pid>==ERROR: AddressSanitizer: <kind> ...      ASAN error report
+//   ==<pid>==ERROR: LeakSanitizer: detected memory leaks
+//   ==<pid>==AddressSanitizer: CHECK failed: ...      ASAN internal check (e.g. TQ-3 Worker stacks)
+//   <file>:<line>:<col>: runtime error: ...           UBSan diagnostic (also printed without file:line)
+//   SUMMARY: {Address,Leak,UndefinedBehavior}Sanitizer: ...
+function sanitizerKindOf(out: string): string | undefined {
+  if (/^(==\d+==)?ERROR: LeakSanitizer\b/m.test(out)) return "leak";
+  if (/^(==\d+==)?ERROR: AddressSanitizer\b/m.test(out)) return "asan";
+  if (/^(==\d+==)?AddressSanitizer: CHECK failed\b/m.test(out)) return "asan-check";
+  if (/^(\S+:\d+:\d+: )?runtime error: |^SUMMARY: UndefinedBehaviorSanitizer\b/m.test(out)) return "ubsan";
+  if (/^SUMMARY: AddressSanitizer\b/m.test(out)) return "asan";
+  if (/^SUMMARY: LeakSanitizer\b/m.test(out)) return "leak";
+  return undefined;
+}
+
 // A short, normalized "why it failed" string used to cluster failures.
 function signatureOf(out: string, status: Status, crashKind?: string): string {
   const lines = out
@@ -509,29 +536,52 @@ function causeOf(e: Entry): string {
   return "other error";
 }
 
-function classifyOutcome(e: Entry) {
-  const clean = (e.output ?? "").replace(ANSI, "");
+// `full` is the whole captured output when called from runOne; e.output is only the stored excerpt
+// (see excerptOf), so --reclassify works on the excerpt.
+function classifyOutcome(e: Entry, full?: string) {
+  const clean = (full ?? e.output ?? "").replace(ANSI, "");
   if (e.status !== "TIMEOUT") {
     const ck = crashKindOf(clean, e.signal ?? null, e.exitCode ?? null);
     delete e.crashKind;
-    delete e.sanitizerNote;
-    if (e.exitCode === 0 && !e.signal) {
-      // Like runner.node.mjs, exit status decides. A sanitizer report in a run that still exited 0
-      // (e.g. ASAN "CHECK failed" on a terminating Worker thread) is kept as a note, not a failure.
+    delete e.reportNote;
+    delete (e as { sanitizerNote?: string }).sanitizerNote; // results.json from before the SANITIZER status
+    const sk = e.exitCode === 0 && !e.signal ? sanitizerKindOf(clean) : undefined;
+    if (sk) {
+      // zun policy (TQ-6): exit 0 + sanitizer report = failure. Bun's runner would count it as a pass.
+      e.status = "SANITIZER";
+      e.crashKind = sk;
+    } else if (e.exitCode === 0 && !e.signal) {
+      // Exit status decides, like runner.node.mjs. Other crash reports in an exit-0 run (typically a
+      // child's panic that the test expected and printed) are kept as a note.
       e.status = "PASS";
-      if (ck) e.sanitizerNote = ck;
+      if (ck) e.reportNote = ck;
     } else if (ck) {
       e.status = "CRASH";
       e.crashKind = ck;
     } else e.status = "FAIL";
   }
-  if (e.status !== "PASS") {
-    e.signature = signatureOf(clean, e.status, e.crashKind);
+  if (!isOk(e.status)) {
+    e.signature = (e.status === "SANITIZER" ? "exit 0 + " : "") + signatureOf(clean, e.status, e.crashKind);
     e.cause = causeOf(e);
   } else {
     delete e.signature;
     delete e.cause;
   }
+}
+
+// Stored output: head + tail of long logs, plus the first sanitizer/crash report if it falls in between,
+// so --reclassify and a human reading results.json still see it.
+const REPORT_MARK = /^(==\d+==)?(ERROR: (Address|Leak)Sanitizer|AddressSanitizer: CHECK failed)|^(\S+:\d+:\d+: )?runtime error: |^panic(\(.*?\))?: |ASSERTION FAILED/m;
+function excerptOf(clean: string): string {
+  if (clean.length <= 6000) return clean;
+  const head = clean.slice(0, 2500);
+  const tail = clean.slice(-2500);
+  const m = REPORT_MARK.exec(clean);
+  if (m && m.index >= 2500 && m.index < clean.length - 2500) {
+    const at = Math.max(2500, m.index - 200);
+    return `${head}\n[...]\n${clean.slice(at, Math.min(at + 2500, clean.length - 2500))}\n[...]\n${tail}`;
+  }
+  return `${head}\n[...]\n${tail}`;
 }
 
 function makeShimDir(base: string): string {
@@ -624,9 +674,10 @@ async function runOne(e: Entry, shimBin: string, home: string, slot: number): Pr
   } catch {}
   const clean = out.replace(ANSI, "");
   e.status = timedOut ? "TIMEOUT" : "FAIL";
-  e.output = clean.length > 6000 ? clean.slice(0, 3000) + "\n[...]\n" + clean.slice(-3000) : clean;
-  classifyOutcome(e);
-  if (e.status === "PASS" && !e.sanitizerNote) delete e.output;
+  e.output = excerptOf(clean);
+  // classify on the full capture: a sanitizer report in the middle of a long log must not be missed
+  classifyOutcome(e, clean);
+  if (e.status === "PASS" && !e.reportNote) delete e.output;
 }
 
 function makeSandbox() {
@@ -646,6 +697,11 @@ const controlSources: { name: string; file: string; module: "cjs" | "esm"; expec
   { name: "esm-sync-assert-fails", file: "esm-fail.mjs", module: "esm", expect: "fail", src: "import assert from 'node:assert';\nassert.strictEqual(1, 2);\n" },
   { name: "cjs-ok-passes", file: "cjs-ok.js", module: "cjs", expect: "pass", src: "const assert = require('assert');\nassert.strictEqual(1, 1);\n" },
   { name: "esm-ok-passes", file: "esm-ok.mjs", module: "esm", expect: "pass", src: "import assert from 'node:assert';\nassert.strictEqual(1, 1);\n" },
+  // Harness self-check for the SANITIZER policy: an exit-0 run whose stderr carries an ASAN report header
+  // must be classified as a failure. (A real ASAN report can't be triggered from JS on purpose.) The header
+  // sits between 4 KB of filler on each side, i.e. outside the stored head/tail excerpt, so this also guards
+  // against classifying on the excerpt instead of the full output (docs/rca/PARITY-1-…).
+  { name: "sanitizer-report-exit0-fails", file: "san-report.js", module: "cjs", expect: "fail", src: "const pad = ('filler line\\n').repeat(400);\nprocess.stderr.write(pad + '==1==ERROR: AddressSanitizer: heap-use-after-free on address 0x0 (parity control)\\n' + pad);\n" },
 ];
 
 async function runControls(): Promise<Control[]> {
@@ -657,7 +713,7 @@ async function runControls(): Promise<Control[]> {
     writeFileSync(join(dir, c.file), c.src);
     const e: Entry = { path: join(dir, c.file), area: "control", kind: "node", importsBunTest: false, module: c.module, status: "NOT_RUN" };
     await runOne(e, sb.shimBin, sb.home, 0);
-    const failed = e.exitCode !== 0 || e.status === "TIMEOUT";
+    const failed = e.exitCode !== 0 || e.status === "TIMEOUT" || e.status === "SANITIZER";
     out.push({ name: c.name, module: c.module, expect: c.expect, exitCode: e.exitCode ?? null, status: e.status, ok: c.expect === "fail" ? failed : !failed });
   }
   rmSync(sb.work, { recursive: true, force: true });
@@ -674,7 +730,7 @@ function reliability(controls: Control[]) {
 function applyReliability(controls: Control[]) {
   const rel = reliability(controls);
   for (const e of entries) {
-    if (e.status === "UNRELIABLE") e.status = "PASS";
+    if (e.status === "UNRELIABLE") e.status = "PASS"; // SANITIZER is a failure, so reliability never touches it
     if (e.status === "PASS" && !rel[e.module]) e.status = "UNRELIABLE";
   }
 }
@@ -750,19 +806,19 @@ function writeReports(meta: Meta) {
   // areas
   const areaRows = new Map<string, Record<string, number>>();
   for (const e of entries) {
-    const r = areaRows.get(e.area) ?? { total: 0, PASS: 0, UNRELIABLE: 0, FAIL: 0, TIMEOUT: 0, CRASH: 0, BLOCKED: 0, SKIPPED: 0, NOT_RUN: 0 };
+    const r = areaRows.get(e.area) ?? { total: 0, PASS: 0, UNRELIABLE: 0, FAIL: 0, TIMEOUT: 0, CRASH: 0, SANITIZER: 0, BLOCKED: 0, SKIPPED: 0, NOT_RUN: 0 };
     r.total++;
     r[e.status]++;
     areaRows.set(e.area, r);
   }
 
   // clusters
-  const failing = ran.filter(e => e.status !== "PASS" && e.status !== "UNRELIABLE");
+  const failing = ran.filter(e => !isOk(e.status));
   const clusters = [...count(failing, e => e.signature ?? "?")].sort((a, b) => b[1] - a[1]);
   const causes = [...count(failing, e => e.cause ?? "?")].sort((a, b) => b[1] - a[1]);
 
   const compact = {
-    schema: 1,
+    schema: 2, // 2: SANITIZER status, passWithSanitizerNote -> passWithReportNote
     date: meta.date,
     target: "Bun 1.3.14 test suite (test/ as kept by cruller)",
     binary: meta.binary,
@@ -780,10 +836,11 @@ function writeReports(meta: Meta) {
       ran: ran.length,
       pass: st("PASS"),
       unreliable: st("UNRELIABLE"),
-      passWithSanitizerNote: entries.filter(e => e.sanitizerNote).length,
+      passWithReportNote: entries.filter(e => e.reportNote).length,
       fail: st("FAIL"),
       timeout: st("TIMEOUT"),
       crash: st("CRASH"),
+      sanitizer: st("SANITIZER"),
       skipped: st("SKIPPED"),
       notRun: st("NOT_RUN"),
       blocked: blocked.length,
@@ -801,7 +858,7 @@ function writeReports(meta: Meta) {
     clusters: clusters.slice(0, 40).map(([signature, n]) => ({ signature, n })),
     // per-test status for runs, so later runs can be diffed (paths are relative to test/)
     resultKeys: { "node/": "test/js/node/test/", "bun/": "test/js/bun/test/" },
-    results: Object.fromEntries(ran.map(e => [shortKey(e.path), e.status === "CRASH" ? `CRASH:${e.crashKind}` : e.status])),
+    results: Object.fromEntries(ran.map(e => [shortKey(e.path), e.status === "CRASH" || e.status === "SANITIZER" ? `${e.status}:${e.crashKind}` : e.status])),
   };
 
   writeFileSync(join(outDir, "results.json"), JSON.stringify({ ...compact, entries }, null, 1));
@@ -815,22 +872,23 @@ function writeReports(meta: Meta) {
   if (meta.sample) md.push(`**Sample:** ${t.ran} of ${t.runnable} runnable tests (stratified by area).`);
   if (meta.filter) md.push(`Filter: ${meta.filter.join(", ")}`);
   md.push("");
-  md.push("| Test files | Runnable | Ran | Pass | Unreliable pass | Fail | Timeout | Crash | Not run | Skipped | Blocked |");
-  md.push("|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|");
-  md.push(`| ${t.files} | ${t.runnable} | ${t.ran} | ${t.pass} (${pct(t.pass, t.ran)}) | ${t.unreliable} (${pct(t.unreliable, t.ran)}) | ${t.fail} | ${t.timeout} | ${t.crash} | ${t.notRun} | ${t.skipped} | ${t.blocked} |`);
-  if (t.passWithSanitizerNote) md.push("", `${t.passWithSanitizerNote} passing tests printed a sanitizer report but exited 0 (see \`sanitizerNote\` in results.json).`);
-  md.push("", "## Controls", "", "| Control | Module | Expect | Exit | OK |", "|---|---|---|---:|---|");
-  for (const c of meta.controls) md.push(`| ${c.name} | ${c.module} | ${c.expect} | ${c.exitCode} | ${c.ok ? "✅" : "❌"} |`);
+  md.push("| Test files | Runnable | Ran | Pass | Unreliable pass | Fail | Timeout | Crash | Sanitizer | Not run | Skipped | Blocked |");
+  md.push("|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|");
+  md.push(`| ${t.files} | ${t.runnable} | ${t.ran} | ${t.pass} (${pct(t.pass, t.ran)}) | ${t.unreliable} (${pct(t.unreliable, t.ran)}) | ${t.fail} | ${t.timeout} | ${t.crash} | ${t.sanitizer} | ${t.notRun} | ${t.skipped} | ${t.blocked} |`);
+  if (t.sanitizer) md.push("", `${t.sanitizer} tests exited 0 but printed a sanitizer report: **SANITIZER, counted as failures** (zun policy; Bun's runner would pass them).`);
+  if (t.passWithReportNote) md.push("", `${t.passWithReportNote} passing tests printed a non-sanitizer crash report (panic / JSC assert) but exited 0 (see \`reportNote\` in results.json).`);
+  md.push("", "## Controls", "", "| Control | Module | Expect | Exit | Status | OK |", "|---|---|---|---:|---|---|");
+  for (const c of meta.controls) md.push(`| ${c.name} | ${c.module} | ${c.expect} | ${c.exitCode} | ${c.status} | ${c.ok ? "✅" : "❌"} |`);
   md.push("", `Reliable: CJS ${compact.reliable.cjs ? "yes" : "**NO**"}, ESM ${compact.reliable.esm ? "yes" : "**NO**"}. A run's passes for an unreliable module kind are reported as UNRELIABLE, not PASS.`);
-  md.push("", "## By module kind", "", "| Kind | Ran | Pass | Unreliable | Fail | Timeout | Crash |", "|---|---:|---:|---:|---:|---:|---:|");
+  md.push("", "## By module kind", "", "| Kind | Ran | Pass | Unreliable | Fail | Timeout | Crash | Sanitizer |", "|---|---:|---:|---:|---:|---:|---:|---:|");
   for (const [m, r] of Object.entries(compact.byModule) as [string, Record<string, number>][])
-    md.push(`| ${m} | ${r.ran} | ${r.pass} | ${r.unreliable} | ${r.fail} | ${r.timeout} | ${r.crash} |`);
+    md.push(`| ${m} | ${r.ran} | ${r.pass} | ${r.unreliable} | ${r.fail} | ${r.timeout} | ${r.crash} | ${r.sanitizer} |`);
   md.push("", "## Blocked by reason", "", "| Reason | Files |", "|---|---:|");
   for (const [k, v] of Object.entries(compact.blockedByReason)) md.push(`| ${k} | ${v} |`);
-  md.push("", "## Per area", "", "| Area | Files | Pass | Unreliable | Fail | Timeout | Crash | Not run | Skipped | Blocked | Pass rate (of ran) | Pass + unreliable |", "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|");
+  md.push("", "## Per area", "", "| Area | Files | Pass | Unreliable | Fail | Timeout | Crash | Sanitizer | Not run | Skipped | Blocked | Pass rate (of ran) | Pass + unreliable |", "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|");
   for (const [a, r] of [...areaRows].sort()) {
-    const ranN = r.PASS + r.UNRELIABLE + r.FAIL + r.TIMEOUT + r.CRASH;
-    md.push(`| ${a} | ${r.total} | ${r.PASS} | ${r.UNRELIABLE} | ${r.FAIL} | ${r.TIMEOUT} | ${r.CRASH} | ${r.NOT_RUN} | ${r.SKIPPED} | ${r.BLOCKED} | ${pct(r.PASS, ranN)} | ${pct(r.PASS + r.UNRELIABLE, ranN)} |`);
+    const ranN = r.PASS + r.UNRELIABLE + r.FAIL + r.TIMEOUT + r.CRASH + r.SANITIZER;
+    md.push(`| ${a} | ${r.total} | ${r.PASS} | ${r.UNRELIABLE} | ${r.FAIL} | ${r.TIMEOUT} | ${r.CRASH} | ${r.SANITIZER} | ${r.NOT_RUN} | ${r.SKIPPED} | ${r.BLOCKED} | ${pct(r.PASS, ranN)} | ${pct(r.PASS + r.UNRELIABLE, ranN)} |`);
   }
   md.push("", "## Failure causes", "", "| Tests | Cause | Examples |", "|---:|---|---|");
   for (const [c, n] of causes) {
@@ -852,9 +910,12 @@ function writeReports(meta: Meta) {
     const ok = (v?: string) => v === "PASS" || v === "UNRELIABLE";
     const gained = Object.keys(now).filter(k => ok(now[k]) && before[k] && !ok(before[k]));
     const lost = Object.keys(now).filter(k => !ok(now[k]) && ok(before[k]));
+    // Results from before schema 2 counted exit-0 + sanitizer report as a pass; a test that is SANITIZER now
+    // and passed before may only have changed by policy (or the report is new: the harness can't tell).
+    const lostPolicy = (prev.schema ?? 1) < 2 ? lost.filter(k => now[k].startsWith("SANITIZER")) : [];
     const prevOk = Object.values(before).filter(ok).length;
     md.push("", `## Compared with ${prev.date} (\`${prev.revision}\`)`, "");
-    md.push(`Exited 0 (pass + unreliable): ${prevOk} → ${t.pass + t.unreliable}. Verified pass: ${prev.totals?.pass} → ${t.pass}. Newly exiting 0: ${gained.length}. Newly failing: ${lost.length}.`, "");
+    md.push(`Exited 0 (pass + unreliable): ${prevOk} → ${t.pass + t.unreliable}. Verified pass: ${prev.totals?.pass} → ${t.pass}. Newly passing: ${gained.length}. Newly failing: ${lost.length}${lostPolicy.length ? ` (${lostPolicy.length} of them SANITIZER, which the earlier run's policy counted as a pass)` : ""}.`, "");
     for (const k of lost) md.push(`- ❌ ${k} (${now[k]})`);
     for (const k of gained) md.push(`- ✅ ${k}`);
   }
@@ -914,7 +975,7 @@ if (args.reclassify) {
   console.log(`zun parity: ${entries.length} test files, ${runnable.length} to run, ${jobs} jobs, binary ${execPath} (${revision})`);
   const t0 = Date.now();
   const controls = existsSync(execPath) ? await runControls() : [];
-  for (const c of controls) console.log(`control ${c.name}: exit ${c.exitCode} ${c.ok ? "ok" : "WRONG (results for " + c.module + " will be UNRELIABLE)"}`);
+  for (const c of controls) console.log(`control ${c.name}: exit ${c.exitCode} (${c.status}) ${c.ok ? "ok" : "WRONG (results for " + c.module + " will be UNRELIABLE)"}`);
   if (!args.list) await runAll(runnable);
   applyReliability(controls);
   writeReports({
