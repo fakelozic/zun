@@ -1,6 +1,6 @@
 # TLS-CA-1: an explicit `ca` is added to the default roots instead of replacing them
 
-- **Status:** fix prepared on branch `t3/tls-ca-replaces-roots`, **not yet built or verified** (no build slot); the
+- **Status:** **fixed and verified** 2026-11-27 (built on `integ/night-1`; gate 13/13 and the regression test pass). The
   regression test fails on the pre-fix snapshot and passes on Bun 1.4.5 and Node 26.
 - **Severity:** high, security-relevant (CA pinning does not pin; mTLS `ca` does not restrict client certificates).
 - **Found by / date:** independent review `docs/security/review-2026-11-26-sol.md` F-1; confirmed at runtime 2026-11-26.
