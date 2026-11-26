@@ -162,6 +162,20 @@ function crossLibcArgs(cfg: Config): string[] {
  * This is a load-bearing workaround; don't "fix" it.
  */
 export function zigOptimize(cfg: Config): "Debug" | "ReleaseFast" | "ReleaseSafe" | "ReleaseSmall" {
+  return zigOptimizeLegacy(cfg);
+}
+
+/**
+ * Zig 0.17 renamed `std.lang.Optimize` tags (`.debug/.safe/.fast/.small`). The
+ * old spellings still parse in `-Doptimize` but are deprecated (removed after 0.18),
+ * so the command line uses the new ones.
+ */
+function zigOptimizeArg(cfg: Config): "debug" | "safe" | "fast" | "small" {
+  const map = { Debug: "debug", ReleaseSafe: "safe", ReleaseFast: "fast", ReleaseSmall: "small" } as const;
+  return map[zigOptimize(cfg)];
+}
+
+function zigOptimizeLegacy(cfg: Config): "Debug" | "ReleaseFast" | "ReleaseSafe" | "ReleaseSmall" {
   let opt: "Debug" | "ReleaseFast" | "ReleaseSafe" | "ReleaseSmall";
   switch (cfg.buildType) {
     case "Debug":
@@ -480,24 +494,21 @@ export function emitZig(n: Ninja, cfg: Config, inputs: ZigBuildInputs): string[]
  */
 function zigBuildArgs(cfg: Config): string[] {
   const cacheDirs = zigCacheDirs(cfg);
-  const zigDest = zigPath(cfg);
   const bool = (b: boolean): string => (b ? "true" : "false");
   return [
-    // Cache and lib paths. --zig-lib-dir points at OUR bundled stdlib,
-    // not any system zig — the compiler and stdlib must match commits.
+    // Cache path. Zig 0.17's `zig build` dropped --global-cache-dir and
+    // --zig-lib-dir: the global cache comes from ZIG_GLOBAL_CACHE_DIR (set by
+    // the zig_build/zig_check rules) and the stdlib is the one next to the
+    // compiler (`--zig-lib=` exists but must be the very first argument).
     "--cache-dir",
     cacheDirs.local,
-    "--global-cache-dir",
-    cacheDirs.global,
-    "--zig-lib-dir",
-    resolve(zigDest, "lib"),
     "--prefix",
     cfg.buildDir,
 
     // Target/optimize/cpu
     "-Dobj_format=obj",
     `-Dtarget=${zigTarget(cfg)}`,
-    `-Doptimize=${zigOptimize(cfg)}`,
+    `-Doptimize=${zigOptimizeArg(cfg)}`,
     `-Dcpu=${zigCpu(cfg)}`,
     ...crossLibcArgs(cfg),
 

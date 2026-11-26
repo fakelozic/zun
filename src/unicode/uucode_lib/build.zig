@@ -200,13 +200,13 @@ pub fn build(b: *std.Build) void {
 
         // There's a bug where building tables in ReleaseFast doesn't work,
         // that I'll be investigating in a follow up commit.
-        .Debug,
+        .debug,
         tables_path_opt,
         build_config_path,
     );
 
     // b.addModule with an existing module
-    _ = b.modules.put(b.dupe("uucode"), mod.lib) catch @panic("OOM");
+    b.modules.put(b.graph.arena, b.dupe("uucode"), mod.lib) catch @panic("OOM");
     b.addNamedLazyPath("tables.zig", mod.tables_path);
 
     const test_mod = createLibMod(
@@ -216,7 +216,7 @@ pub fn build(b: *std.Build) void {
 
         // There's a bug where building tables in ReleaseFast doesn't work,
         // that I'll be investigating in a follow up commit.
-        .Debug,
+        .debug,
         null,
         b.path("src/build/test_build_config.zig"),
     );

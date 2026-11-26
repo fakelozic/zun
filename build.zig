@@ -1,4 +1,4 @@
-//! bzrt: vanilla Zig 0.16 build.zig — replaces the Oven-patched original.
+//! zun: vanilla Zig 0.17 build.zig — replaces the Oven-patched original.
 //! Interface: `zig build obj` → bun-zig.o (for linking with C++/JSC via Ninja).
 //! `zig build check` — full semantic analysis (same as build016.zig).
 
@@ -8,7 +8,7 @@ const ObjectFormat = enum { obj, bc };
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
-    const optimize = b.option(std.builtin.OptimizeMode, "optimize", "Prioritize performance, safety, or binary size") orelse .ReleaseFast;
+    const optimize = b.option(std.lang.Optimize, "optimize", "Prioritize performance, safety, or binary size") orelse .fast;
 
     // Keep this option surface compatible with scripts/build/zig.ts. The
     // native build invokes `zig build obj` with these values for every profile.
@@ -30,17 +30,17 @@ pub fn build(b: *std.Build) void {
     const llvm_codegen_threads = b.option(u32, "llvm_codegen_threads", "LLVM codegen threads") orelse 0;
     const obj_format = b.option(ObjectFormat, "obj_format", "Object output format") orelse .obj;
     const override_no_export_cpp_apis = b.option(bool, "override-no-export-cpp-apis", "Override C++ API exports") orelse false;
-    const codegen_path_abs = if (std.fs.path.isAbsolute(codegen_path)) codegen_path else b.pathFromRoot(codegen_path);
+    const codegen_path_abs = if (std.fs.path.isAbsolute(codegen_path)) codegen_path else b.root.joinString(b.allocator, codegen_path) catch @panic("OOM");
 
     // --- build_options ---
     const opts = b.addOptions();
-    opts.addOption([]const u8, "base_path", b.pathFromRoot("."));
+    opts.addOption([]const u8, "base_path", b.root.joinString(b.allocator, ".") catch @panic("OOM"));
     opts.addOption([]const u8, "codegen_path", codegen_path_abs);
     opts.addOption(bool, "codegen_embed", codegen_embed);
     opts.addOption(u32, "canary_revision", canary_revision);
     opts.addOption(bool, "is_canary", canary_revision != 0);
     opts.addOption(std.SemanticVersion, "version", std.SemanticVersion.parse(version_text) catch @panic("invalid -Dversion"));
-    opts.addOption([:0]const u8, "sha", b.allocator.dupeZ(u8, sha) catch @panic("OOM"));
+    opts.addOption([:0]const u8, "sha", b.allocator.dupeSentinel(u8, sha, 0) catch @panic("OOM"));
     opts.addOption(bool, "baseline", baseline);
     opts.addOption(bool, "enable_logs", enable_logs);
     opts.addOption(bool, "enable_asan", enable_asan);
@@ -138,7 +138,7 @@ pub fn build(b: *std.Build) void {
     if (@hasField(std.meta.Child(@TypeOf(obj)), "llvm_codegen_threads")) {
         obj.llvm_codegen_threads = llvm_codegen_threads;
     }
-    // vanilla Zig 0.16 removed Build.Module.sanitize_address. C/C++ still
+    // vanilla Zig 0.16/0.17 have no Build.Module.sanitize_address. C/C++ still
     // receive -fsanitize=address from scripts/build/flags.ts; keep the build
     // option accepted until the Zig-side sanitizer API is wired up.
     if (enable_asan and @hasField(std.Build.Module, "sanitize_address")) {

@@ -1,4 +1,5 @@
-//! bzrt: build harness for the trimmed Bun on vanilla zig 0.16 (Linux-only).
+//! bzrt/zun: build harness for the trimmed Bun on vanilla Zig 0.17 (Linux-only).
+//! (The file name is historical: it started as the Zig 0.16 harness.)
 //!
 //! Reproduces the module graph from the native build.zig (addInternalImports):
 //! "bun" (cyclic self-import) + build_options + translated-c-headers +
@@ -21,13 +22,15 @@ pub fn build(b: *std.Build) void {
         "scripts/build.ts",
         "--profile=debug",
         "--build-dir=build",
+        // Keep the build cache inside the repo, never in ~/.bun (the real Bun's dir).
+        "--cache-dir=build/cache",
         "--target=codegen",
     });
 
     // --- build_options: fields 1:1 from BunBuildOptions.buildOptionsModule ---
     const opts = b.addOptions();
-    opts.addOption([]const u8, "base_path", b.pathFromRoot("."));
-    opts.addOption([]const u8, "codegen_path", b.pathFromRoot("build/codegen"));
+    opts.addOption([]const u8, "base_path", b.root.joinString(b.allocator, ".") catch @panic("OOM"));
+    opts.addOption([]const u8, "codegen_path", b.root.joinString(b.allocator, "build/codegen") catch @panic("OOM"));
     opts.addOption(bool, "codegen_embed", false);
     opts.addOption(u32, "canary_revision", 0);
     opts.addOption(bool, "is_canary", false);
