@@ -339,6 +339,37 @@ const allocPrint: Rule = {
   },
 };
 
+/** Add a trailing `, 0` sentinel argument: `f(a, b)` -> `g(a, b, 0)`. */
+function sentinelCall(name: string, desc: string, re: RegExp, newName: string): Rule {
+  return {
+    name,
+    desc,
+    run(src, mask) {
+      const edits: Edit[] = [];
+      const r = new RegExp(re.source, "g");
+      let m: RegExpExecArray | null;
+      while ((m = r.exec(src))) {
+        if (!mask[m.index]) continue;
+        const open = m.index + m[0].length - 1;
+        const close = matchFwd(src, mask, open);
+        if (close < 0) continue;
+        const inner = src.slice(open + 1, close - 1);
+        const trailingComma = /,\s*$/.test(inner);
+        const body = trailingComma ? inner.replace(/,(\s*)$/, ", 0,$1") : inner + ", 0";
+        edits.push({ start: m.index, end: close, text: m[0].slice(0, -1).replace(m[1], newName) + "(" + body + ")" });
+      }
+      return edits;
+    },
+  };
+}
+
+/** `a.dupeZ(T, s)` -> `a.dupeSentinel(T, s, 0)` (Allocator.dupeZ removed in 0.17). */
+const dupeZ = sentinelCall("dupe-z", "allocator.dupeZ(T, s) -> dupeSentinel(T, s, 0)", /\.(dupeZ)\(/, "dupeSentinel");
+/** `std.fmt.bufPrintZ(buf, f, a)` -> `std.fmt.bufPrintSentinel(buf, f, a, 0)`. */
+const bufPrintZ = sentinelCall("buf-print-z", "std.fmt.bufPrintZ -> bufPrintSentinel(..., 0)", /\bstd\.fmt\.(bufPrintZ)\(/, "bufPrintSentinel");
+
+const metaInt = regexRule("meta-int", "std.meta.Int(s, n) -> @Int(s, n)", /\bstd\.meta\.Int\(/, () => "@Int(");
+
 const builtinTarget = regexRule(
   "builtin-target",
   "builtin.os/cpu/abi/object_format -> builtin.target.os/cpu/abi/ofmt",
@@ -427,12 +458,13 @@ const reflection: Rule = {
   run(src, mask) {
     const edits: Edit[] = [];
     const re =
-      /\.@"(struct|union|enum|opaque|fn|pointer)"\.(fields|decls|params|is_var_args|calling_convention|is_const|is_volatile|is_allowzero|address_space)\b/g;
+      /\.(?:@"(struct|union|enum|opaque|fn|pointer)"|(pointer))\.(fields|decls|params|is_var_args|calling_convention|is_const|is_volatile|is_allowzero|address_space)\b/g;
     let m: RegExpExecArray | null;
     while ((m = re.exec(src))) {
       if (!mask[m.index]) continue;
-      const [, kind, member] = m;
-      const tagEnd = m.index + 2 + kind.length + 2; // end of .@"kind"
+      const kind = m[1] ?? m[2];
+      const member = m[3];
+      const tagEnd = m.index + (m[1] ? 2 + kind.length + 2 : 1 + kind.length); // end of .@"kind" / .pointer
       const end = m.index + m[0].length;
       const wrap = (fn: string) => {
         const s = chainStart(src, mask, m!.index);
@@ -464,6 +496,9 @@ const REWRITE_RULES: Rule[] = [
   voidInit,
   stackFallback,
   allocPrint,
+  dupeZ,
+  bufPrintZ,
+  metaInt,
   builtinTarget,
   optimizeCompare,
   optimizeType,
