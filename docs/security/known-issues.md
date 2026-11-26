@@ -158,7 +158,7 @@ against the same server). Suspected cause: `src/js/node/net.ts` applies the sess
 zun and upstream), so a session made before a key was blocked (C2) or under a different `ca` would be accepted. Turn on
 re-verification of the cached chain in the same change. Source: `review-2026-11-26-verify-C2.md` (C2-3).
 
-### FETCH-2 (review H1-1): chunked framing without body bytes keeps a fetch alive forever (Medium), open, shared with Bun 1.4.5
+### FETCH-2 (review H1-1): chunked framing without body bytes keeps a fetch alive forever (Medium), **accepted for now** (matches Bun 1.4.5; stricter check deferred as HL-3 in `hardening-later.md`)
 
 - A server can send endless chunk extensions or trailer lines with no body bytes. CPU is linear in the bytes and RSS is
   flat (no spin, no growth), but the request never ends while the peer stays active. Nothing caps extension or trailer
@@ -166,7 +166,7 @@ re-verification of the cached chain in the same change. Source: `review-2026-11-
   `review-2026-11-26-verify-H1.md`. **Mitigation now:** pass an `AbortSignal.timeout()` to fetches of untrusted
   origins.
 
-### FETCH-3 (review H1-2): lax trailer terminator; same-read surplus discarded and socket reused (Medium), open, shared with Bun 1.4.5
+### FETCH-3 (review H1-2): lax trailer terminator; same-read surplus discarded and socket reused (Medium), **accepted for now** (matches Bun 1.4.5; stricter check deferred as HL-2 in `hardening-later.md`)
 
 - `0\r\n\n` and `0\r\n\r\r\n` complete a chunked body (Node rejects them). Bytes after the terminator in the same
   read are dropped and the socket goes back to the keep-alive pool. No desync was reproduced, but this leniency is a
