@@ -18,6 +18,13 @@ Start with `docs/ROADMAP.md` and `docs/GAP.md`.
 4. **Stay separate from Bun.** The binary, paths, env vars and caches are `zun`'s own. Never
    touch the owner's real `bun` install or its dirs. The JS-facing API stays `Bun.*` for compatibility.
 5. **Keep attribution.** Code comes from Bun (MIT) and cruller (MIT). Keep `LICENSE.md` notices.
+6. **Security first: zun is meant for production.** Read `docs/security/README.md`.
+   - Never weaken security to make something pass: no disabling TLS verification, certificate checks, sandboxing,
+     bounds/safety checks or sanitizers; no `catch unreachable` on input-driven errors; no `@setRuntimeSafety(false)` without a written reason.
+   - Treat all network, file and env input as hostile. Prefer checked arithmetic and slices over raw pointers on input paths.
+   - Every download in the build must be pinned (commit or version) **and** checksum-verified.
+   - Nothing is sent to third-party services (no telemetry, no crash upload).
+   - Note any security-relevant change in the commit message (`security:` prefix), and log known issues in `docs/security/`.
 
 ## Where things are
 
@@ -27,6 +34,7 @@ Start with `docs/ROADMAP.md` and `docs/GAP.md`.
 | `docs/GAP.md` | everything zun lacks vs Bun canary, how to fill each kind of gap, task breakdown |
 | `docs/plan/` | research plans per area (restore, runtime diff, AoT, tooling, native deps) |
 | `docs/status/` | what currently builds and passes |
+| `docs/security/` | security policy, dependency/CVE audit, backports, production gates |
 | `docs/study/` | how Bun 1.3.14, cruller, Bun 1.4 and Node fit together |
 | `docs/zig/` | Zig 0.17 knowledge bank (cheatsheet, migration, probes, upstream docs, lessons) |
 | `scripts/fetch-zig-docs.sh` | re-download the upstream Zig docs |

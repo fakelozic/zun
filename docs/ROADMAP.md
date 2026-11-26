@@ -29,6 +29,28 @@ Full gap list against Bun canary, plus the task breakdown: `docs/GAP.md`.
 - Zig migrations are **scripts** (`scripts/fix_zig017*`, alongside cruller's `fix_zig016_*.py`), so restored code and future Zig upgrades go through the same automation.
 - One integration owner merges agent branches. Shared files (`build.zig`, codegen, CLI dispatch) change only through small, green merges.
 
+## Security track (continuous, starts now)
+
+The owner wants to run zun **in production**, so security runs alongside every phase, not after it.
+Details: `docs/security/`.
+
+1. **Dependency audit (now):** list every pinned native dependency and the vulnerabilities fixed upstream after
+   zun's pinned version (WebKit/JSC, BoringSSL, uSockets/uWS, picohttpparser, lsquic, c-ares, zlib, zstd, brotli,
+   libarchive, sqlite, lolhtml, mimalloc, tinycc). Also list Bun security fixes after 1.3.14 that touch code zun still has.
+   Output: a prioritised backport list.
+2. **Backports:** apply critical fixes to the code zun ships (HTTP/TLS/WebSocket/fetch first).
+3. **Supply chain:** every build download pinned and checksum-verified; record an SBOM of what goes into the binary.
+4. **Hardening:** sanitizer (ASAN/UBSan) test runs in CI, fuzzing of the HTTP/1, HTTP/2, WebSocket and URL parsers,
+   safe release-build flags (PIE, RELRO, stack protector, `_FORTIFY_SOURCE` for C deps).
+5. **Process:** `SECURITY.md` (how to report), a watch list of advisories (Bun, WebKit, BoringSSL, …) and a target
+   time to patch critical issues.
+
+**Production gates.** Before zun serves real traffic, all of these must hold:
+- [ ] No known critical or high CVE unpatched in shipped code (from the audit, re-checked monthly).
+- [ ] Release build passes the relevant Bun tests, plus sanitizer runs and fuzzing on network parsers with no open findings.
+- [ ] Advisory watch and backport process in place, and has been exercised at least once.
+- [ ] Deployed behind a reverse proxy, rolled out gradually, with a tested switch back to Bun.
+
 ## Phase 0: Study ✅ (Milestone 1)
 
 - [x] Compare upstream 1.3.14, cruller and 1.4.5 (sizes, what was removed, module map): `docs/study/`
