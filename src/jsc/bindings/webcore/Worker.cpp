@@ -34,6 +34,7 @@
 #include "StructuredSerializeOptions.h"
 #include <JavaScriptCore/IteratorOperations.h>
 #include <JavaScriptCore/ScriptCallStack.h>
+#include <JavaScriptCore/JSLock.h>
 #include <wtf/TZoneMallocInlines.h>
 #include <wtf/Scope.h>
 #include "SerializedScriptValue.h"
@@ -557,8 +558,22 @@ extern "C" void WebWorker__teardownJSCVM(Zig::GlobalObject* globalObject)
 
     vm.heap.collectNow(JSC::Sync, JSC::CollectionScope::Full);
 
-    vm.derefSuppressingSaferCPPChecking(); // NOLINT
-    vm.derefSuppressingSaferCPPChecking(); // NOLINT
+    // The worker thread took the API lock with the raw JSC__VM__getAPILock
+    // (web_worker.zig threadMain), so no JSLockHolder (and no RefPtr<VM>) is
+    // live on its stack, and the thread ends by returning (TQ-3). Destroy the
+    // VM and release that lock here, once, in ~JSLockHolder's order: keep the
+    // refcounted JSLock alive, drop the VM (~VM runs with the lock held, as it
+    // requires; it detaches the JSLock via willDestroyVM), then unlock, which
+    // also restores the thread's AtomStringTable.
+    RELEASE_ASSERT(vm.apiLock().currentThreadIsHoldingLock());
+    RefPtr<JSC::JSLock> apiLock(&vm.apiLock());
+    // Drop every remaining reference (Bun 1.4.5's destroyVM does the same):
+    // nothing below the caller's frame holds one any more, so ~VM must run here
+    // rather than leak the VM. The reference count is not assumed.
+    for (uint32_t n = vm.refCount(); n > 1; --n)
+        vm.derefSuppressingSaferCPPChecking(); // NOLINT
+    vm.derefSuppressingSaferCPPChecking(); // NOLINT — runs ~VM; `vm` is dangling below.
+    apiLock->unlock();
 }
 
 extern "C" void WebWorker__dispatchExit(Worker* worker, int32_t exitCode)

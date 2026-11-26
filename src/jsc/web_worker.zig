@@ -35,8 +35,10 @@
 //!      `requested_terminate` is observed, run `beforeExit`.
 //!   3. `shutdown()` — call `vm.onExit()`, tear down the JSC VM, post
 //!      `dispatchExit` (which releases `parent_poll_ref` + the thread ref on
-//!      the parent), free the arena, exit the thread. After `dispatchExit`
-//!      `this` may be freed at any time; nothing below it dereferences `this`.
+//!      the parent), free the arena, and return. The thread ends by
+//!      returning from `threadMain`, never by `pthread_exit` (TQ-3). After
+//!      `dispatchExit` `this` may be freed at any time; nothing below it
+//!      dereferences `this`.
 //!
 //! `vm_lock` exists solely to close the TOCTOU between the parent reading a
 //! non-null `vm` (in `notifyNeedTermination`) and the worker freeing the arena
@@ -424,19 +426,34 @@ fn threadMain(this: *WebWorker) void {
     // Terminated before we even started — skip straight to shutdown so the
     // parent still gets a close event and the thread ref is dropped.
     if (this.hasRequestedTerminate()) {
-        this.shutdown();
-        // unreachable
+        return this.shutdown();
     }
 
-    this.startVM() catch |err| {
+    const started = this.startVM() catch |err| {
         Output.panic("An unhandled error occurred while starting a worker: {s}\n", .{@errorName(err)});
     };
+    // startVM() observed requested_terminate before building the VM and
+    // already ran shutdown().
+    if (!started) return;
 
-    this.vm.?.global.vm().holdAPILock(this, jsc.OpaqueWrap(WebWorker, WebWorker.spin));
+    // Take the API lock for the rest of the thread's life with the raw
+    // JSC__VM__getAPILock: no C++ frame (JSLockHolder) stays live below
+    // spin(), so the thread can end by plain returns (TQ-3). The lock is
+    // released exactly once, by WebWorker__teardownJSCVM during shutdown(),
+    // after ~VM (the JSLockHolder destructor's order); see Worker.cpp.
+    // Every path out of spin() goes through shutdown() with `vm` set, so the
+    // lock is never leaked and never released twice.
+    _ = this.vm.?.global.vm().getAPILock();
+    this.spin();
+    // Returns into std.Thread's trampoline and start_thread: TSD destructors
+    // run on a clean stack. Never pthread_exit here.
 }
 
 /// Phase 1: build the worker's arena + VirtualMachine and publish `vm`.
-fn startVM(this: *WebWorker) !void {
+/// Returns false if it observed `requested_terminate` before the VM existed
+/// and already ran `shutdown()`; the caller must then return without
+/// touching `this` (shutdown() posted the close task, so `this` may be freed).
+fn startVM(this: *WebWorker) !bool {
     assert(this.status == .start);
     assert(this.vm == null);
 
@@ -475,7 +492,10 @@ fn startVM(this: *WebWorker) !void {
     // VM that will immediately tear down.
     if (this.hasRequestedTerminate()) {
         temp_proxy_storage.deinit();
+        // The errdefer above would deinit it again on an error return.
+        temp_proxy_storage = .{};
         this.shutdown();
+        return false;
     }
 
     var vm = try jsc.VirtualMachine.initWorker(this, .{
@@ -503,9 +523,9 @@ fn startVM(this: *WebWorker) !void {
     //     so teardownJSCVM/vm.deinit() run and the just-built JSC::VM
     //     heap is not leaked.
     // We do NOT call shutdown() directly from here: shutdown() with a
-    // non-null vm runs vm.onExit() (JS), which requires holdAPILock.
-    // Instead we return; threadMain enters holdAPILock(spin) and spin()'s
-    // first check observes requested_terminate.
+    // non-null vm runs vm.onExit() (JS), which requires the API lock.
+    // Instead we return; threadMain takes the API lock, enters spin(), and
+    // spin()'s first check observes requested_terminate.
     {
         this.vm_lock.lock();
         defer this.vm_lock.unlock();
@@ -523,7 +543,7 @@ fn startVM(this: *WebWorker) !void {
     // if terminate arrived during it, skip configureDefines() (which
     // walks the resolver's global dir_cache) and entry-point loading.
     // spin() will observe the flag and shutdown() under the API lock.
-    if (this.hasRequestedTerminate()) return;
+    if (this.hasRequestedTerminate()) return true;
 
     b.configureDefines() catch {
         // Fall through to spin() → shutdown() for full teardown under
@@ -531,14 +551,17 @@ fn startVM(this: *WebWorker) !void {
         // bails immediately; vm.log carries the error for flushLogs.
         vm.exit_handler.exit_code = 1;
         _ = this.setRequestedTerminate();
-        return;
+        return true;
     };
 
     vm.loadExtraEnvAndSourceCodePrinter();
+    return true;
 }
 
 /// Phase 2: load the entry point, dispatch 'online', run the event loop.
-/// Runs inside `holdAPILock`. Always ends by calling `shutdown()`.
+/// Runs with the API lock held (taken in threadMain). Every path ends with
+/// `return this.shutdown();` and nothing runs after it: `this` may be freed
+/// once shutdown() has posted the close task.
 fn spin(this: *WebWorker) void {
     log("[{d}] spin start", .{this.execution_context_id});
 
@@ -551,15 +574,15 @@ fn spin(this: *WebWorker) void {
     // JSC::VM built by initWorker is torn down rather than leaked.
     if (this.hasRequestedTerminate()) {
         this.flushLogs(vm);
-        this.shutdown();
+        return this.shutdown();
     }
 
     vm.preload = this.preloads;
 
     // Resolve the entry point on the worker thread (the parent only stored the
-    // raw specifier). The returned slice is BORROWED — every exit from spin()
-    // goes through shutdown() which is noreturn, so a `defer free` here would
-    // never run anyway.
+    // raw specifier). The returned slice is BORROWED (aliases the specifier,
+    // the standalone graph or the resolver's arena): do not free it. The
+    // arena is freed by shutdown().
     var resolve_error = bun.String.empty;
     const path = resolveEntryPointSpecifier(vm, this.unresolved_specifier, &resolve_error, vm.log) orelse {
         vm.exit_handler.exit_code = 1;
@@ -570,21 +593,21 @@ fn spin(this: *WebWorker) void {
         }
         resolve_error.deref();
         this.flushLogs(vm);
-        this.shutdown();
+        return this.shutdown();
     };
     resolve_error.deref();
 
     // Terminated while resolving — exit code 0, no error.
     if (this.hasRequestedTerminate()) {
         this.flushLogs(vm);
-        this.shutdown();
+        return this.shutdown();
     }
 
     var promise = vm.loadEntryPointForWebWorker(path) catch {
         // process.exit() may have run during load; don't clobber its code.
         if (!this.exit_called) vm.exit_handler.exit_code = 1;
         this.flushLogs(vm);
-        this.shutdown();
+        return this.shutdown();
     };
 
     if (promise.status() == .rejected) {
@@ -592,10 +615,18 @@ fn spin(this: *WebWorker) void {
 
         if (!handled) {
             vm.exit_handler.exit_code = 1;
-            this.shutdown();
+            return this.shutdown();
         }
     } else {
         _ = promise.result(vm.jsc_vm);
+    }
+
+    // process.exit(), terminate(), or an uncaught error (onUnhandledRejection
+    // now requests termination and returns instead of tearing down in place)
+    // during top-level evaluation: stop before 'online'.
+    if (this.hasRequestedTerminate()) {
+        this.flushLogs(vm);
+        return this.shutdown();
     }
 
     this.flushLogs(vm);
@@ -638,26 +669,30 @@ fn spin(this: *WebWorker) void {
     }
 
     this.flushLogs(vm);
-    this.shutdown();
+    return this.shutdown();
 }
 
 /// Phase 3: run exit handlers, tear down the JSC VM, post the close event,
-/// free the arena, exit the thread.
+/// free the arena. Returns; the caller returns straight up to threadMain and
+/// the thread ends normally (never pthread_exit: TQ-3).
 ///
 /// Ordering constraints (each step is a barrier for the next):
 ///   1. `vm = null` under lock    — a racing notifyNeedTermination() now sees
 ///                                  null and skips wakeup() instead of touching
 ///                                  memory freed in step 5.
 ///   2. `vm.onExit()`             — user 'exit' handlers run; needs the JSC VM.
-///   3. `teardownJSCVM()`         — collectNow + vm.deref×2; can re-enter Zig
-///                                  via finalizers, so must precede step 5.
+///   3. `teardownJSCVM()`         — collectNow + ~VM + release of the API lock
+///                                  threadMain took; can re-enter Zig via
+///                                  finalizers, so must precede step 5.
 ///   4. `dispatchExit()`          — posts close task → parent releases
 ///                                  parent_poll_ref + thread-held Worker ref.
 ///                                  After this `this` may be freed at any time.
 ///   5. free loop/arena/pools     — no `this.*` dereferences below step 4.
 ///
 /// Does NOT free `this` — see ownership rule in the file header.
-fn shutdown(this: *WebWorker) noreturn {
+/// Call only from the worker thread's bottom frames (threadMain, startVM,
+/// spin), with no JS or JSC frames of this VM live on the stack.
+fn shutdown(this: *WebWorker) void {
     jsc.markBinding(@src());
     this.setStatus(.terminated);
     bun.analytics.Features.workers_terminated += 1;
@@ -734,8 +769,6 @@ fn shutdown(this: *WebWorker) noreturn {
     if (arena) |*arena_| {
         arena_.deinit();
     }
-
-    bun.exitThread();
 }
 
 /// process.exit() inside the worker. Worker-thread only.
@@ -814,9 +847,24 @@ fn onUnhandledRejection(vm: *jsc.VirtualMachine, globalObject: *jsc.JSGlobalObje
         bun.outOfMemory();
     };
     jsc.markBinding(@src());
-    WebWorker__dispatchError(globalObject, worker.cpp_worker, bun.String.cloneUTF8(array.written()), error_instance);
+    // We return through the live JS/C++ frames below us, so the C++ throw
+    // scope inside dispatchErrorWithValue's SerializedScriptValue::create must
+    // be checked here (as flushLogs does), or the next TopExceptionScope up
+    // the stack trips verifyExceptionCheckNeedIsSatisfied. We are the
+    // last-resort handler, so an exception from dispatching is dropped.
+    bun.jsc.fromJSHostCallGeneric(globalObject, @src(), WebWorker__dispatchError, .{ globalObject, worker.cpp_worker, bun.String.cloneUTF8(array.written()), error_instance }) catch {
+        _ = globalObject.tryTakeException();
+    };
+    // Do NOT call worker.shutdown() here (TQ-3). We are inside this VM's
+    // running JS (microtask drain, event dispatch, module evaluation):
+    // tearing the VM down here destroys a JSC::VM that is still entered, and
+    // returning would run frames on it (before the fix, pthread_exit
+    // abandoned them instead). Request termination like process.exit()
+    // does: the termination exception unwinds the JS frames, spin() observes
+    // requested_terminate and calls shutdown() at the bottom of the stack,
+    // where the exit handlers run once.
     _ = worker.setRequestedTerminate();
-    worker.shutdown();
+    vm.jsc_vm.notifyNeedTermination();
 }
 
 /// Resolve a worker entry-point specifier to a path the module loader can

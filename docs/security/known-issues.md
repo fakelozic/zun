@@ -54,7 +54,7 @@ rendered by a server). Review scope: `src/md/*.zig`, `src/runtime/api/MarkdownOb
 
 ## Runtime (found during the md restore)
 
-### RT-3 / TQ-3: Worker threads end with `pthread_exit` inside live C++ frames (all builds), open, RCA done
+### RT-3 / TQ-3: Worker threads end with `pthread_exit` inside live C++ frames (all builds), fix prepared, unverified
 
 - **Root cause found** (`docs/rca/TQ-3-worker-thread-exit-under-asan.md`). Every Worker thread ends with
   `bun.exitThread()` → `pthread_exit` called from Zig (`src/jsc/web_worker.zig:738`) while C++ frames are live:
@@ -72,8 +72,11 @@ rendered by a server). Review scope: `src/md/*.zig`, `src/runtime/api/MarkdownOb
   buffer it would unmap live TLS. Introduced by the Zig 0.16 port.
 - **Impact:** 47 parity tests (31 worker_threads) report SANITIZER/CRASH, so ASAN is blind on Worker code until
   this is fixed. Per-Worker VM leak in production.
-- **Plan:** fix A (thread returns normally, port of 1.4.5) and fix B (`signal_stack_size = null` under ASAN) from
-  the RCA. Regression test `test/js/node/test/parallel/test-zun-worker-thread-exit.js` (fails on 0a5b26b).
+- **Status:** fix prepared on branch `t3/fix-worker-thread-exit`, **not yet built or verified**: fix A (thread
+  returns normally; API lock taken raw and released once in `WebWorker__teardownJSCVM`; `onUnhandledRejection`
+  requests termination instead of tearing down in place) and fix B (`signal_stack_size = null` under ASAN). Exit-path
+  table and open risks in the RCA. Regression test `test/js/node/test/parallel/test-zun-worker-thread-exit.js`
+  (fails on 0a5b26b, passes on Node 26).
 
 ### SPAWN-1 / TQ-10: extra stdio `"pipe"` fds of `child_process.spawn` closed twice (High), open, RCA done
 

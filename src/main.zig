@@ -1,6 +1,12 @@
 pub const panic = _bun.crash_handler.panic;
 pub const std_options = std.Options{
     .enable_segfault_handler = false,
+    // Zig >= 0.16 std gives every std.Thread (and the main thread) a TLS alt signal stack. Under ASAN, ASAN
+    // already gave the thread its own mmap'ed one and munmaps *whatever is current* at thread exit, so a second
+    // owner makes ASAN unmap our TLS (TQ-3, docs/rca/TQ-3-worker-thread-exit-under-asan.md). ASAN builds keep
+    // ASAN's alt stack (it reports stack overflows itself; crash_handler installs no SEGV handler under ASAN).
+    // Other builds keep std's default, which the crash handler needs on Zig-spawned threads.
+    .signal_stack_size = if (_bun.Environment.enable_asan) null else (std.Options{}).signal_stack_size,
 };
 
 pub const io_mode = .blocking;
