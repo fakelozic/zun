@@ -134,3 +134,5 @@ A passing test prints only its name and `End`; a failing one prints the output a
 
 To measure the whole suite (classification, pass/fail per area, failure clusters), use the parity
 harness instead: `bun scripts/parity.ts --exec-path build/debug/zun-debug --jobs 6`. See `docs/status/parity.md`.
+Unlike `runner.node.mjs`, the harness counts a run that printed an ASAN/UBSan/LSan report as a failure
+(status `SANITIZER`) even when it exited 0; that is the rule for zun's gates.
