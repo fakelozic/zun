@@ -11,6 +11,27 @@ with "reached unreachable code". **Do:** use `try .initCapacity(gpa, n)` when a 
 writes into the writer's buffer directly. Also: `"str" ** n` no longer parses at all in
 0.17 (the `**` operator is gone, the error talks about whitespace around `*`).
 
+## 2026-11-26: `0xaaaa…` in a crash means "read `undefined`"
+
+In Debug builds, Zig fills memory assigned `undefined` with `0xaa` bytes. The baseline
+crashed with `rax = 0xaaaaaaaaaaaaaaaa` in `P.zig:2777`. The cause was
+`opts.macro_context = undefined;` in `src/bundler/transpiler.zig` (see `docs/status/baseline.md`).
+In release builds the memory isn't filled, so the same bug can *seem* to work.
+**Do:** when you see `0xaa…` in a register or pointer, look for an `= undefined` upstream of the crash.
+
+## 2026-11-26: build-script APIs that differ between 0.16 and 0.17 (checked against both std trees)
+
+Cruller's build broke on 0.16 after two "zig 17" commits. Checked in `lib/std` of both versions:
+- `std.builtin.OptimizeMode`: 0.16 has `.Debug/.ReleaseSafe/.ReleaseFast/.ReleaseSmall`; 0.17 has
+  `std.lang.Optimize` with `.debug/.safe/.fast/.small` (`OptimizeMode` is an alias). On 0.16, `.fast` fails with
+  `no field named 'fast' in enum 'builtin.OptimizeMode'`.
+- `b.pathFromRoot(p)` exists in 0.16 (`Build.zig:1770`) and is gone in 0.17. Use `b.root.joinString(b.allocator, p)`
+  (`b.root` is a `Cache.Path`; 0.16 has `b.build_root`, a `Cache.Directory`, instead).
+- `allocator.dupeZ(u8, s)` exists in 0.16 and is gone in 0.17. `dupeSentinel(u8, s, 0)` exists in **both**, so
+  switch to it before the port.
+**Do:** the Zig build runner type-checks `build.zig` before running any step, so one stale API blocks every step.
+To bisect, run `zig build -l` first: it lists the steps and fails fast on build-script errors.
+
 ## 2026-11-26: memory of Zig is out of date; probe first
 
 Assuming `@typeInfo(T).@"struct".fields` still worked (it's been the API for years)
