@@ -654,15 +654,16 @@ pub const Resolver = struct {
             bun.crash_handler.current_action = prev_action;
         };
 
-        if (Environment.show_crash_trace) {
+        // zun (TQ-2): upstream gates the print *and* the breakpoint on
+        // `bun.cli.debug_flags.hasResolveBreakpoint(import_path)`. Until the
+        // debug flags are restored, both share the opt-in
+        // BUN_DEBUG_BREAK_ON_RESOLVE gate, so a plain debug run prints nothing.
+        if (Environment.show_crash_trace and bun.env_var.BUN_DEBUG_BREAK_ON_RESOLVE.get()) {
             bun.Output.debug("Resolving <green>{s}<r> from <blue>{s}<r>", .{
                 import_path,
                 source_dir,
             });
-            // bzrt: opt-in (see BUN_DEBUG_BREAK_ON_RESOLVE doc) — un-gated,
-            // this fires on every single resolve with no SIGTRAP handler
-            // installed, killing the process unless a debugger is attached.
-            if (bun.env_var.BUN_DEBUG_BREAK_ON_RESOLVE.get()) @breakpoint();
+            @breakpoint();
         }
 
         const original_order = r.extension_order;

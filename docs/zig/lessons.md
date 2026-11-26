@@ -186,3 +186,12 @@ can call its methods on the field directly (`flags.reused.max(.callback)`), sinc
 packed. `@enumFromInt(@max(@intFromEnum(a), @intFromEnum(b)))` gives an ordered `max` over the declared tag values.
 Used for `HTTPClient.PeerVerification` in `HTTPClient.Flags` (TLS-ID-1). **Do:** give the enum an explicit tag type
 (`enum(u2)`), so the packed struct's bit count stays fixed and the `_: uN` padding can be adjusted by hand.
+
+## 2026-11-26: `BUN_DEBUG_QUIET_LOGS` silences scoped logs only; a cut operand must become a gate, not vanish
+
+TQ-2: debug builds printed `DEBUG: Resolving …` on every resolve even with `BUN_DEBUG_QUIET_LOGS=1`. That variable is
+read only in `Output.ScopedLogger.evaluateIsVisible` (`src/bun_core/output.zig`), so it hides `Output.scoped(...)`
+logs (`[sys]`, `[fs]`, …) but not `Output.debug(...)`, which prints whenever `Environment.isDebug`. The print was
+un-gated because a "make it compile" edit deleted `and bun.cli.debug_flags.hasResolveBreakpoint(...)` when `src/cli`
+was cut. **Do:** when a condition's operand refers to a removed subsystem, replace it with an equivalent opt-in gate
+(or `false`), never delete it. Verified by running the unfixed and fixed builds (`docs/rca/TQ-2-*.md`).
