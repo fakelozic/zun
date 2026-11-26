@@ -543,9 +543,15 @@ SSL_CTX *us_ssl_ctx_build_raw(struct us_bun_socket_context_options_t options,
    * everywhere downstream — no special "owner" path. */
   ssl_ctx_drop_passphrase(ssl_context);
 
+  /* zun (security TLS-CA-1, as Bun 1.4.5 and Node): an explicit CA *replaces* the default trust (bundled + system +
+   * NODE_EXTRA_CA_CERTS roots); chains must validate against the supplied CAs only. SSL_CTX_new() gave this context
+   * its own empty X509_STORE, so both `ca` branches fill that store and never start from us_get_default_ca_store().
+   * Seeding the defaults here made `ca` additive: a client pinning a private CA still accepted any publicly trusted
+   * certificate, and a server doing mTLS with `ca` accepted any client certificate chaining to a public root.
+   * Default roots are used only when no `ca`/`ca_file_name` is given (request_cert branch below, and the per-socket
+   * client attach in us_internal_ssl_attach). The blocked-SPKI check (C2) is on the ctx's verify callback and runs
+   * whatever store is used. */
   if (options.ca_file_name) {
-    SSL_CTX_set_cert_store(ssl_context, us_get_default_ca_store());
-
     STACK_OF(X509_NAME) *ca_list = SSL_load_client_CA_file(options.ca_file_name);
     if (ca_list == NULL) {
       *err = CREATE_BUN_SOCKET_ERROR_LOAD_CA_FILE;
@@ -564,12 +570,12 @@ SSL_CTX *us_ssl_ctx_build_raw(struct us_bun_socket_context_options_t options,
         us_verify_callback);
 
   } else if (options.ca && options.ca_count > 0) {
-    X509_STORE *cert_store = NULL;
+    X509_STORE *cert_store = SSL_CTX_get_cert_store(ssl_context);
+    if (cert_store == NULL) {
+      ssl_ctx_build_fail(ssl_context);
+      return NULL;
+    }
     for (unsigned int i = 0; i < options.ca_count; i++) {
-      if (cert_store == NULL) {
-        cert_store = us_get_default_ca_store();
-        SSL_CTX_set_cert_store(ssl_context, cert_store);
-      }
       if (!add_ca_cert_to_ctx_store(ssl_context, options.ca[i], cert_store)) {
         *err = CREATE_BUN_SOCKET_ERROR_INVALID_CA;
         ssl_ctx_build_fail(ssl_context);

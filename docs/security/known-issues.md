@@ -97,7 +97,7 @@ rendered by a server). Review scope: `src/md/*.zig`, `src/runtime/api/MarkdownOb
   fd exhaustion. Same as upstream 1.3.14. Found by the TQ-10 sibling search; not reproduced yet.
 - **Plan:** close the previous fd (or reject the message) when one is already pending; add a test that sends two fds.
 
-### TLS-CA-1 (review F-1): an explicit `ca` *adds* to the default roots instead of replacing them (High), open, confirmed
+### TLS-CA-1 (review F-1): an explicit `ca` *adds* to the default roots instead of replacing them (High), fix prepared (branch `t3/tls-ca-replaces-roots`), unverified
 
 - **What:** `fetch(url, { tls: { ca } })` and `tls.connect({ ca })` trust the given CA **plus** every bundled/system/
   `NODE_EXTRA_CA_CERTS` root. Node documents `ca` as replacing the default trust; Bun 1.4.5 behaves the same as Node.
@@ -117,8 +117,12 @@ rendered by a server). Review scope: `src/md/*.zig`, `src/runtime/api/MarkdownOb
 
   `test-zun-fetch-tls-options.mjs` missed it because its wrong-CA case uses a server that the default store rejects too,
   and FETCH-1's "bogus ca rejects example.com" probe used malformed PEM (context creation failed), not a valid other root.
-- **Plan:** RCA + fix as Bun 1.4.5 does (empty store when `ca` is given), regression test with a default-trusted peer
-  and an unrelated valid `ca` (needs a build; queued after the CLI restore). Until fixed: **do not rely on `ca` pinning**.
+- **Fix prepared, not yet built/verified:** branch `t3/tls-ca-replaces-roots`; both `ca` branches of
+  `us_ssl_ctx_build_raw` now fill the context's own empty store (as upstream `cd1ad599`, #31339, first in bun-v1.4.0).
+  RCA `docs/rca/TLS-CA-1-explicit-ca-additive.md`; regression test
+  `test/js/node/test/parallel/test-zun-tls-ca-replaces-roots.mjs` (fails on the `0a5b26b` snapshot, passes on Bun
+  1.4.5 and Node 26). Close only after it passes on a build with the fix. Until then: **do not rely on `ca` pinning**.
+  HTTP/3 ignores `ca` entirely; that is F-2, separate.
 
 ### TLS-ID-1 (review F-3, F-4, F-5): fetch TLS identity policy is applied too late, to the wrong socket or not at all (High), open, confirmed
 
