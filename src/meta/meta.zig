@@ -388,3 +388,15 @@ pub fn ReifyUnion(
     const attrs_c = attrs;
     return @Union(layout, Tag, &names_c, &types_c, &attrs_c);
 }
+
+// Zig 0.17: @typeInfo is struct-of-arrays. Array-of-structs views for code ported by
+// scripts/fix_zig017.ts (see zig017_compat.zig).
+const zig017_compat = @import("./zig017_compat.zig");
+pub const fieldsOf = zig017_compat.fieldsOf;
+pub const declsOf = zig017_compat.declsOf;
+pub const paramsOf = zig017_compat.paramsOf;
+pub const StructField = zig017_compat.StructField;
+pub const UnionField = zig017_compat.UnionField;
+pub const EnumField = zig017_compat.EnumField;
+pub const Declaration = zig017_compat.Declaration;
+pub const Param = zig017_compat.Param;

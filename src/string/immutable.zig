@@ -402,6 +402,18 @@ pub fn repeatingBuf(self: []u8, char: u8) void {
     @memset(self, char);
 }
 
+/// `s` repeated `n` times, at comptime. Replaces Zig's `"ab" ** n`, whose `**`
+/// operator was removed in Zig 0.17. Same result type as the old operator on a
+/// string literal: a pointer to a sentinel-terminated array.
+pub inline fn repeatComptime(comptime s: []const u8, comptime n: usize) *const [s.len * n:0]u8 {
+    return comptime blk: {
+        var buf: [s.len * n:0]u8 = undefined;
+        for (0..n) |i| @memcpy(buf[i * s.len ..][0..s.len], s);
+        const final = buf;
+        break :blk &final;
+    };
+}
+
 pub fn indexOfCharNeg(self: string, char: u8) i32 {
     for (self, 0..) |c, i| {
         if (c == char) return @as(i32, @intCast(i));

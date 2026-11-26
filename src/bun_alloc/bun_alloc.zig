@@ -14,6 +14,10 @@ pub const LinuxMemFdAllocator = @import("./LinuxMemFdAllocator.zig");
 pub const BufferFallbackAllocator = @import("./BufferFallbackAllocator.zig");
 pub const MaybeOwned = @import("./maybe_owned.zig").MaybeOwned;
 
+/// Zig 0.16's `std.heap.stackFallback` / `StackFallbackAllocator` (removed in 0.17).
+pub const stackFallback = @import("./stack_fallback.zig").stackFallback;
+pub const StackFallbackAllocator = @import("./stack_fallback.zig").StackFallbackAllocator;
+
 pub fn isSliceInBufferT(comptime T: type, slice: []const T, buffer: []const T) bool {
     return (@intFromPtr(buffer.ptr) <= @intFromPtr(slice.ptr) and
         (@intFromPtr(slice.ptr) + slice.len * @sizeOf(T)) <= (@intFromPtr(buffer.ptr) + buffer.len * @sizeOf(T)));
