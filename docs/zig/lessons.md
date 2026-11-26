@@ -213,3 +213,10 @@ is gone (use `bun.compat.nanoTimestamp()` deltas); signal handlers for `bun.sys.
 `(std.posix.SIG, *const siginfo_t, ?*anyopaque)`; `std.c.raise`/`kill` take `std.posix.SIG`, while `bun.sys.sigaction`
 and `Process.kill` take an int (`@intFromEnum`); `linux.E.init(rc)` is `linux.errno(rc)`; `std.mem.trimLeft` is
 `trimStart`; `std.array_list.Managed` has no `.writer()` (use `bun.compat.listWriter(&list)`).
+
+## 2026-11-27: `zig build-exe` can leave an output file even when compilation fails
+
+Verified on 0.17.1 with `docs/zig/probes/cli-gate/bad.zig` (an AstGen error, "use of undeclared identifier"):
+`zig build-exe bad.zig` prints the error and **exits 1**, yet a ~6 MB file `bad` is left in the current directory. It is
+not a valid program (running it gives "exec format error"). **Do:** judge a build by its exit code, never by whether the
+output file exists, and don't commit probe outputs (the probe dir had picked up such a file).
